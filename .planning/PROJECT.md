@@ -24,7 +24,7 @@
 - [ ] 대본 A/B 테스트 — 대본 변형 여러 개 생성 후 비교
 - [ ] 장면 분석 → 나레이션 + 이미지 프롬프트 + 동영상 프롬프트 자동 생성
 - [ ] AI 이미지 생성 (장면별, 스타일/모델/캐릭터 선택)
-- [ ] AI 영상 생성 (Kling/Sora/Veo 2 API 연동)
+- [ ] AI 영상 생성 (Kling 3.0 API 연동 — Sora 종료 예정, Veo 2는 v2 검토)
 - [ ] TTS 음성 합성 (Qwen3-TTS 기반 3초 보이스 클로닝, 한국어 지원)
 - [ ] 목소리 스타일 설정 (남/여, 말투, 속도 조절)
 - [ ] 무음 구간 자동 삭제
@@ -58,6 +58,10 @@
 | Qwen3-TTS 보이스 클로닝 | 3초 샘플로 음성 복제, Apache 2.0, 한국어 지원, ElevenLabs 대비 99% 비용 절감 | Confirmed |
 | 벤치마킹 기반 대본 생성이 핵심 | 단순 AI 대본이 아닌, 성공 채널의 결을 학습한 전략적 대본 | Confirmed |
 | 4단계 파이프라인 UI | 메이크렌즈 참고: 1.대본 → 2.장면/이미지 → 3.음성 → 4.최종 영상 | Confirmed |
+| 자막 수집: youtube-transcript-api | YouTube Data API captions.download 불가 → InnerTube timedtext 엔드포인트 사용 (경쟁사 동일 방식) | Confirmed |
+| Opencut fork → 비디오 캔버스 | MIT 라이선스, Next.js+Drizzle 스택 동일, 47.8K 스타 — Phase 5에서 fork 활용 | Confirmed |
+| 보이스 클로닝 동의 UX 필수 | 법적 리스크 대응: 음성 소유 확인, 동의 기록, 삭제 기능 | Confirmed |
+| Google OAuth 인증 Phase 1 선행 | YouTube 업로드 인증 심사 4-8주 소요 — Phase 1에서 신청 시작 | Confirmed |
 
 ## Context
 
