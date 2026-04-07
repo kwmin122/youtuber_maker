@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { JobProgress } from "@/components/job-progress";
 
 interface Project {
   id: string;
@@ -32,6 +33,11 @@ export default function ProjectDetailPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
+  // Test job state
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [supabaseJwt, setSupabaseJwt] = useState<string | null>(null);
+  const [submittingJob, setSubmittingJob] = useState(false);
+
   useEffect(() => {
     async function fetchProject() {
       try {
@@ -52,6 +58,34 @@ export default function ProjectDetailPage() {
     }
     fetchProject();
   }, [projectId, router]);
+
+  async function handleRunTestJob() {
+    setSubmittingJob(true);
+    try {
+      // Submit test job
+      const jobRes = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "test", projectId }),
+      });
+
+      if (!jobRes.ok) throw new Error("Failed to submit job");
+
+      const { jobId: newJobId } = await jobRes.json();
+      setJobId(newJobId);
+
+      // Get Supabase JWT for Realtime subscription
+      const tokenRes = await fetch("/api/supabase-token");
+      if (tokenRes.ok) {
+        const { token } = await tokenRes.json();
+        setSupabaseJwt(token);
+      }
+    } catch {
+      // Handle error silently
+    } finally {
+      setSubmittingJob(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -145,6 +179,19 @@ export default function ProjectDetailPage() {
             placeholder="Project description"
           />
         </div>
+      </div>
+
+      {/* Test Job Section */}
+      <div className="space-y-3 rounded-lg border p-4">
+        <h2 className="text-lg font-semibold">Worker Test</h2>
+        <Button
+          onClick={handleRunTestJob}
+          disabled={submittingJob}
+          variant="outline"
+        >
+          {submittingJob ? "Submitting..." : "테스트 작업 실행"}
+        </Button>
+        <JobProgress jobId={jobId} supabaseJwt={supabaseJwt} />
       </div>
     </div>
   );
