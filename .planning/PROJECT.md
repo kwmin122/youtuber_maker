@@ -62,6 +62,38 @@
 | Opencut fork → 비디오 캔버스 | MIT 라이선스, Next.js+Drizzle 스택 동일, 47.8K 스타 — Phase 5에서 fork 활용 | Confirmed |
 | 보이스 클로닝 동의 UX 필수 | 법적 리스크 대응: 음성 소유 확인, 동의 기록, 삭제 기능 | Confirmed |
 | Google OAuth 인증 Phase 1 선행 | YouTube 업로드 인증 심사 4-8주 소요 — Phase 1에서 신청 시작 | Confirmed |
+| 프로젝트 뼈대: nextjs-better-auth fork | Next.js 16 + Supabase + Drizzle + shadcn/ui 100% 일치 스타터킷 (MIT) | Confirmed |
+| 무음 감지: Silero VAD | MIT, 8.7K stars, 엔터프라이즈급 음성 활동 감지 | Confirmed |
+| 오디오 파형 UI: wavesurfer.js | BSD-3, 10.2K stars, 편집 UI 파형 시각화 필수 컴포넌트 | Confirmed |
+| 영상 미리보기: Vidstack Player | MIT, 3.5K stars, 모던 웹 비디오 플레이어 | Confirmed |
+| Job 대시보드: queuedash | MIT, Next.js API Route 임베드 가능, BullMQ 실시간 모니터링 | Confirmed |
+| 파이프라인 레퍼런스: MoneyPrinterTurbo | MIT, 55K stars, 전체 쇼츠 생성 파이프라인 참고 | Reference |
+
+## Open Source Toolkit
+
+프로젝트에 통합/참고할 오픈소스 도구 목록:
+
+### 직접 통합 (fork/embed)
+| 도구 | 용도 | 라이선스 | Stars |
+|------|------|---------|-------|
+| Opencut | 비디오 캔버스 (Phase 5) | MIT | 47.8K |
+| nextjs-better-auth | 프로젝트 뼈대 (Phase 1) | MIT | 97 |
+| youtube-transcript-api | 자막 수집 (Phase 2) | MIT | - |
+| Silero VAD | 무음 감지/제거 (Phase 4) | MIT | 8.7K |
+| wavesurfer.js | 오디오 파형 UI (Phase 5) | BSD-3 | 10.2K |
+| Vidstack Player | 영상 미리보기 (Phase 5) | MIT | 3.5K |
+| queuedash | BullMQ 대시보드 (Phase 1) | MIT | 401 |
+| FFmpeg.wasm | 브라우저 영상 처리 (Phase 5) | MIT | 17.3K |
+
+### 레퍼런스/벤치마킹
+| 도구 | 참고 대상 | 라이선스 | Stars |
+|------|----------|---------|-------|
+| MoneyPrinterTurbo | 전체 파이프라인 아키텍처 | MIT | 55K |
+| ShortGPT | 콘텐츠 엔진 추상화 | MIT | 7.2K |
+| AutoCut | 자막 기반 편집 UX | Apache-2.0 | 7.6K |
+| Voice-Clone-Studio | Qwen3-TTS UI 패턴 | Apache-2.0 | 386 |
+| SaaS-Boilerplate | 대시보드/멀티테넌시 | MIT | 7K |
+| OpenVoice | 음성 클로닝 대안 | MIT | 36.2K |
 
 ## Context
 

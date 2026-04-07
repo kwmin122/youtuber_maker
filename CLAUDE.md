@@ -13,9 +13,14 @@
 - **Database:** Supabase (PostgreSQL + Auth + Storage + Realtime)
 - **ORM:** Drizzle ORM
 - **Queue:** BullMQ + Redis (백그라운드 워커)
-- **Video:** FFmpeg (spawn 직접 사용, fluent-ffmpeg 사용 금지)
+- **Video Editor:** Opencut fork (MIT, 47.8K stars) — 비디오 캔버스
+- **Video Processing:** FFmpeg (spawn 직접 사용, fluent-ffmpeg 사용 금지) + FFmpeg.wasm (브라우저)
+- **Audio:** wavesurfer.js (파형 UI), Silero VAD (무음 감지)
+- **Player:** Vidstack Player (영상 미리보기)
 - **AI APIs:** Gemini, OpenAI (사용자 BYOK), Kling 3.0 (영상), Qwen3-TTS (음성)
+- **Subtitles:** youtube-transcript-api (InnerTube timedtext)
 - **Hosting:** Vercel (웹) + Railway (워커)
+- **Monitoring:** queuedash (BullMQ 대시보드)
 
 ## Key Decisions
 
@@ -24,6 +29,9 @@
 - Qwen3-TTS 보이스 클로닝 — 3초 샘플, Apache 2.0, 한국어 지원
 - Sora 사용 금지 — 2026.09 종료 예정, Kling 3.0 사용
 - fluent-ffmpeg 사용 금지 — 유지보수 중단, FFmpeg 7.x 호환 불가
+- 자막 수집: youtube-transcript-api (YouTube Data API captions.download는 소유자 권한 필요)
+- 프로젝트 뼈대: nextjs-better-auth fork (Next.js 16 + Supabase + Drizzle 100% 일치)
+- 파이프라인 레퍼런스: MoneyPrinterTurbo (MIT, 55K stars)
 
 ## SUNCO Workflow
 
