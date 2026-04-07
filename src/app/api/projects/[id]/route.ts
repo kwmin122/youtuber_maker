@@ -14,7 +14,7 @@ const updateProjectSchema = z.object({
       lastActiveTab: z.string(),
       completedSteps: z.array(z.number()),
       lastEditedAt: z.string(),
-      draftFlags: z.record(z.boolean()),
+      draftFlags: z.record(z.string(), z.boolean()),
     })
     .optional(),
 });
