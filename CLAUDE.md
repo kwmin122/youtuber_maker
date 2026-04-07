@@ -1,0 +1,41 @@
+# YouTuber Min — AI YouTube Shorts Factory
+
+유튜브 쇼츠 자동화 SaaS. 벤치마킹 기반 대본 생성 → 장면/이미지/영상 AI 생성 → TTS 보이스 클로닝 → 영상 편집 → YouTube 자동 업로드.
+
+## Core Value
+
+성공한 채널의 말투/기승전결/후킹 요소를 학습하여 조회수가 나오는 대본을 생성하고, 원스톱 자동화한다.
+
+## Tech Stack
+
+- **Framework:** Next.js 16 (App Router, React 19, TypeScript 5)
+- **Styling:** Tailwind CSS v4, shadcn/ui v4
+- **Database:** Supabase (PostgreSQL + Auth + Storage + Realtime)
+- **ORM:** Drizzle ORM
+- **Queue:** BullMQ + Redis (백그라운드 워커)
+- **Video:** FFmpeg (spawn 직접 사용, fluent-ffmpeg 사용 금지)
+- **AI APIs:** Gemini, OpenAI (사용자 BYOK), Kling 3.0 (영상), Qwen3-TTS (음성)
+- **Hosting:** Vercel (웹) + Railway (워커)
+
+## Key Decisions
+
+- Two-tier architecture: Vercel(웹) + Railway(워커) — 서버리스 타임아웃 회피
+- 사용자 본인 API 키(BYOK) — 서비스 비용 최소화
+- Qwen3-TTS 보이스 클로닝 — 3초 샘플, Apache 2.0, 한국어 지원
+- Sora 사용 금지 — 2026.09 종료 예정, Kling 3.0 사용
+- fluent-ffmpeg 사용 금지 — 유지보수 중단, FFmpeg 7.x 호환 불가
+
+## SUNCO Workflow
+
+This project is managed with SUNCO. Before starting any substantial work:
+
+1. Check current state: `/sunco:status`
+2. Start work through a SUNCO command so planning artifacts stay in sync:
+   - `/sunco:quick` — small fixes, doc updates, ad-hoc tasks
+   - `/sunco:debug` — investigation and bug fixing
+   - `/sunco:execute` — planned phase work
+
+Do not make direct repo edits outside a SUNCO workflow unless explicitly bypassing it.
+
+Current phase: 1 — Foundation
+Next step: `/sunco:discuss 1`
