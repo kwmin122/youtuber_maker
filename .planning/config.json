@@ -1,0 +1,16 @@
+{
+  "mode": "yolo",
+  "agent": "claude-code",
+  "profile": "quality",
+  "planning_dir": ".planning",
+  "created_at": "2026-04-07T12:55:58.616Z",
+  "granularity": "standard",
+  "git_branching": "milestone",
+  "commit_docs": true,
+  "model_profile": "quality",
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true
+  }
+}
