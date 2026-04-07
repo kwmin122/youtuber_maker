@@ -9,7 +9,7 @@ import { eq, desc, and } from "drizzle-orm";
 const submitJobSchema = z.object({
   type: z.string().min(1),
   projectId: z.string().uuid().optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function POST(request: NextRequest) {
