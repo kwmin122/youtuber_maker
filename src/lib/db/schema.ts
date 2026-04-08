@@ -7,6 +7,7 @@ import {
   uuid,
   bigint,
   real,
+  boolean,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -170,3 +171,80 @@ export const projectChannels = pgTable("project_channels", {
 }, (table) => [
   uniqueIndex("project_channels_unique_idx").on(table.projectId, table.channelId),
 ]);
+
+// ---------- Phase 3 Tables ----------
+
+export const analyses = pgTable("analyses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  channelId: uuid("channel_id")
+    .notNull()
+    .references(() => channels.id, { onDelete: "cascade" }),
+  /** IDs of transcripts used for this analysis */
+  transcriptIds: jsonb("transcript_ids").$type<string[]>().notNull(),
+  /** AI tone/style analysis result */
+  toneAnalysis: jsonb("tone_analysis").$type<{
+    style: string;
+    sentenceEndings: string[];
+    frequentExpressions: string[];
+    formality: "formal" | "casual" | "mixed";
+    emotionalTone: string;
+  }>().notNull(),
+  /** Detected hooking patterns */
+  hookingPatterns: jsonb("hooking_patterns").$type<Array<{
+    type: string;
+    description: string;
+    example: string;
+    frequency: number;
+  }>>().notNull(),
+  /** Detected content structure patterns */
+  structurePatterns: jsonb("structure_patterns").$type<Array<{
+    name: string;
+    sections: string[];
+    sectionDurations: number[];
+    frequency: number;
+  }>>().notNull(),
+  /** AI-recommended topics based on analysis */
+  topicRecommendations: jsonb("topic_recommendations").$type<Array<{
+    title: string;
+    description: string;
+    rationale: string;
+    suggestedHookType: string;
+    suggestedStructure: string;
+    viralPotential: "high" | "medium" | "low";
+  }>>().notNull(),
+  /** Which AI provider was used */
+  aiProvider: text("ai_provider").notNull(), // 'gemini' | 'openai'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const scripts = pgTable("scripts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  analysisId: uuid("analysis_id")
+    .notNull()
+    .references(() => analyses.id, { onDelete: "cascade" }),
+  /** Topic title from topicRecommendations */
+  title: text("title").notNull(),
+  /** Full script content */
+  content: text("content").notNull(),
+  /** Variant identifier */
+  variant: text("variant").notNull(), // 'A', 'B', 'C'
+  /** Hook strategy used */
+  hookType: text("hook_type").notNull(),
+  /** Structure strategy used */
+  structureType: text("structure_type").notNull(),
+  /** Approximate word count */
+  wordCount: integer("word_count").notNull(),
+  /** Estimated duration in seconds */
+  estimatedDuration: integer("estimated_duration").notNull(),
+  /** Whether user selected this variant */
+  isSelected: boolean("is_selected").notNull().default(false),
+  /** Which AI provider was used */
+  aiProvider: text("ai_provider").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
