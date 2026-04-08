@@ -26,6 +26,9 @@ export async function generateImage(
     response_format: "url",
   });
 
+  if (!response.data || response.data.length === 0) {
+    throw new Error("DALL-E 3 returned no image data");
+  }
   const imageData = response.data[0];
   if (!imageData?.url) {
     throw new Error("DALL-E 3 returned no image URL");
