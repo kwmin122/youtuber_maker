@@ -57,6 +57,8 @@ export const projects = pgTable("projects", {
     lastEditedAt: string;
     draftFlags: Record<string, boolean>;
   }>(),
+  exportedVideoUrl: text("exported_video_url"), // Supabase Storage public URL
+  exportedAt: timestamp("exported_at"), // when last export completed
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -261,6 +263,19 @@ export const scenes = pgTable("scenes", {
   imagePrompt: text("image_prompt").notNull(), // prompt for image generation
   videoPrompt: text("video_prompt").notNull(), // prompt for video generation
   duration: real("duration"), // estimated duration in seconds (3-5s per scene)
+  subtitleStyle: jsonb("subtitle_style").$type<{
+    fontFamily: string;       // e.g., 'Noto Sans KR', 'Pretendard'
+    fontSize: number;         // px (16-72)
+    fontColor: string;        // hex (#FFFFFF)
+    backgroundColor: string;  // hex with alpha (#00000080) or 'transparent'
+    borderColor: string;      // hex (#000000)
+    borderWidth: number;      // px (0-4)
+    shadowColor: string;      // hex (#00000080)
+    shadowOffset: number;     // px (0-4)
+    position: 'top' | 'center' | 'bottom';
+  }>(),
+  transitionType: text("transition_type").default("cut"), // 'fade' | 'dissolve' | 'slide-left' | 'slide-right' | 'zoom-in' | 'cut'
+  transitionDuration: real("transition_duration").default(0.5), // seconds (0.2-1.0)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -293,6 +308,24 @@ export const voiceProfiles = pgTable("voice_profiles", {
   /** Timestamp when user confirmed voice ownership consent */
   consentRecordedAt: timestamp("consent_recorded_at").notNull(),
   provider: text("provider").notNull().default("openai-tts"), // 'openai-tts' | 'qwen3-tts'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------- Phase 5 Tables ----------
+
+export const audioTracks = pgTable("audio_tracks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'bgm' | 'sfx'
+  name: text("name").notNull(), // display name (e.g., "Upbeat Lo-Fi")
+  url: text("url").notNull(), // Supabase Storage public URL
+  storagePath: text("storage_path").notNull(), // for deletion
+  startTime: real("start_time").notNull().default(0), // seconds from video start
+  endTime: real("end_time"), // null = until end of video
+  volume: real("volume").notNull().default(0.3), // 0.0-1.0
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
