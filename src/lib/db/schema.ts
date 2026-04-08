@@ -248,3 +248,51 @@ export const scripts = pgTable("scripts", {
   aiProvider: text("ai_provider").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ---------- Phase 4 Tables ----------
+
+export const scenes = pgTable("scenes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  scriptId: uuid("script_id")
+    .notNull()
+    .references(() => scripts.id, { onDelete: "cascade" }),
+  sceneIndex: integer("scene_index").notNull(), // 0-based order within script
+  narration: text("narration").notNull(), // TTS input text
+  imagePrompt: text("image_prompt").notNull(), // prompt for image generation
+  videoPrompt: text("video_prompt").notNull(), // prompt for video generation
+  duration: real("duration"), // estimated duration in seconds (3-5s per scene)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const mediaAssets = pgTable("media_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sceneId: uuid("scene_id")
+    .notNull()
+    .references(() => scenes.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'image' | 'video' | 'audio'
+  url: text("url").notNull(), // Supabase Storage public URL
+  storagePath: text("storage_path").notNull(), // Supabase Storage path (for deletion)
+  provider: text("provider").notNull(), // 'openai-dalle3' | 'kling' | 'openai-tts' | 'qwen3-tts'
+  status: text("status").notNull().default("pending"), // 'pending' | 'generating' | 'completed' | 'failed'
+  /** Provider-specific metadata (e.g., kling task ID, style, model, error details) */
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const voiceProfiles = pgTable("voice_profiles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // user-defined profile name (e.g., "내 목소리")
+  sampleUrl: text("sample_url").notNull(), // Supabase Storage URL for voice sample
+  sampleStoragePath: text("sample_storage_path").notNull(), // for deletion
+  sampleDuration: real("sample_duration"), // duration in seconds (3-20s)
+  /** Timestamp when user confirmed voice ownership consent */
+  consentRecordedAt: timestamp("consent_recorded_at").notNull(),
+  provider: text("provider").notNull().default("openai-tts"), // 'openai-tts' | 'qwen3-tts'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
