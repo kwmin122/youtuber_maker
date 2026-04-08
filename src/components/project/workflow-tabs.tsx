@@ -2,6 +2,7 @@
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { FileText, Image, Mic, Video } from "lucide-react";
+import { SceneTab } from "./scene-tab";
 
 interface WorkflowTabsProps {
   activeTab: string;
@@ -34,7 +35,7 @@ export function WorkflowTabs({
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isCompleted = completedSteps.includes(tab.step);
-          const isDisabled = tab.step > 1; // Only tab 1 active in Phase 3
+          const isDisabled = tab.step > 2; // Tabs 1-2 active in Phase 4
 
           return (
             <TabsTrigger

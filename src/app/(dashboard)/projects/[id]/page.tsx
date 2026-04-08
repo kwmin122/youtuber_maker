@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WorkflowTabs } from "@/components/project/workflow-tabs";
 import { ScriptTab } from "@/components/project/script-tab";
+import { SceneTab } from "@/components/project/scene-tab";
 
 interface Project {
   id: string;
@@ -195,11 +196,7 @@ export default function ProjectDetailPage() {
       >
         {{
           script: <ScriptTab projectId={projectId} />,
-          scene: (
-            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-              <p className="text-sm">장면/이미지 생성 (Phase 4에서 구현)</p>
-            </div>
-          ),
+          scene: <SceneTab projectId={projectId} />,
           voice: (
             <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
               <p className="text-sm">음성 합성 (Phase 4에서 구현)</p>
