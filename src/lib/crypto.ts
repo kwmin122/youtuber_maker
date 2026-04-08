@@ -16,10 +16,16 @@ export interface EncryptedPayload {
 
 export function getMasterKey(): Buffer {
   const key = process.env.MASTER_ENCRYPTION_KEY;
-  if (!key || key.length < 32) {
-    throw new Error("MASTER_ENCRYPTION_KEY must be at least 32 bytes");
+  if (!key) {
+    throw new Error("MASTER_ENCRYPTION_KEY is not set");
   }
-  return Buffer.from(key, "base64");
+  const buf = Buffer.from(key, "base64");
+  if (buf.length < KEY_LENGTH) {
+    throw new Error(
+      `MASTER_ENCRYPTION_KEY must decode to at least ${KEY_LENGTH} bytes (got ${buf.length})`
+    );
+  }
+  return buf;
 }
 
 export function encrypt(plaintext: string, masterKey: Buffer): EncryptedPayload {

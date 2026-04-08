@@ -7,7 +7,7 @@ RETURNS text AS $$
 BEGIN
   RETURN current_setting('request.jwt.claims', true)::json->>'sub';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- Users can only view their own jobs via Realtime
 CREATE POLICY "Users can view own jobs"

@@ -6,8 +6,10 @@ import { getQueue } from "@/lib/queue";
 import { getServerSession } from "@/lib/auth/get-session";
 import { eq, desc, and } from "drizzle-orm";
 
+const ALLOWED_JOB_TYPES = ["test"] as const;
+
 const submitJobSchema = z.object({
-  type: z.string().min(1),
+  type: z.enum(ALLOWED_JOB_TYPES),
   projectId: z.string().uuid().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
 });
@@ -18,7 +20,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const parsed = submitJobSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -42,11 +49,11 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
-  // Enqueue to BullMQ — pass jobId and userId, NEVER plaintext API keys
+  // Enqueue to BullMQ — jobId/userId AFTER spread to prevent client override
   await getQueue().add(type, {
+    payload: payload || {},
     jobId: created.id,
     userId: session.user.id,
-    ...(payload || {}),
   });
 
   return NextResponse.json(

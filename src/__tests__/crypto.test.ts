@@ -146,15 +146,13 @@ describe("getMasterKey", () => {
 
   it("should throw if MASTER_ENCRYPTION_KEY is not set", () => {
     delete process.env.MASTER_ENCRYPTION_KEY;
-    expect(() => getMasterKey()).toThrow(
-      "MASTER_ENCRYPTION_KEY must be at least 32 bytes"
-    );
+    expect(() => getMasterKey()).toThrow("MASTER_ENCRYPTION_KEY is not set");
   });
 
   it("should throw if MASTER_ENCRYPTION_KEY is too short", () => {
     process.env.MASTER_ENCRYPTION_KEY = "short";
     expect(() => getMasterKey()).toThrow(
-      "MASTER_ENCRYPTION_KEY must be at least 32 bytes"
+      "MASTER_ENCRYPTION_KEY must decode to at least 32 bytes"
     );
   });
 
