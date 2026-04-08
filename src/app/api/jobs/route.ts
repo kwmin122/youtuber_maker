@@ -15,6 +15,7 @@ const ALLOWED_JOB_TYPES = [
   "generate-image",
   "generate-video",
   "generate-tts",
+  "export-video",
 ] as const;
 
 const submitJobSchema = z.object({
