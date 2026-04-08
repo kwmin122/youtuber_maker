@@ -9,11 +9,13 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   } as unknown as typeof ResizeObserver;
 }
 
-// Polyfill pointer capture methods
-if (typeof Element.prototype.setPointerCapture === "undefined") {
-  Element.prototype.setPointerCapture = function () {};
-  Element.prototype.releasePointerCapture = function () {};
-  Element.prototype.hasPointerCapture = function () {
-    return false;
-  };
+// Polyfill pointer capture methods (only in jsdom/browser environments)
+if (typeof globalThis.Element !== "undefined") {
+  if (typeof Element.prototype.setPointerCapture === "undefined") {
+    Element.prototype.setPointerCapture = function () {};
+    Element.prototype.releasePointerCapture = function () {};
+    Element.prototype.hasPointerCapture = function () {
+      return false;
+    };
+  }
 }
