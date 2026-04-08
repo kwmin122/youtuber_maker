@@ -7,6 +7,7 @@ import { handleGenerateScript } from "./handlers/generate-script";
 import { handleSplitScenes } from "./handlers/split-scenes";
 import { handleGenerateImage } from "./handlers/generate-image";
 import { handleGenerateVideo } from "./handlers/generate-video";
+import { handleGenerateTTS } from "./handlers/generate-tts";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -24,6 +25,8 @@ export async function processJob(job: Job) {
       return handleGenerateImage(job, db);
     case "generate-video":
       return handleGenerateVideo(job, db);
+    case "generate-tts":
+      return handleGenerateTTS(job, db);
     default:
       throw new Error(`Unknown job type: ${job.name}`);
   }
