@@ -35,7 +35,7 @@ export function WorkflowTabs({
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isCompleted = completedSteps.includes(tab.step);
-          const isDisabled = tab.step > 2; // Tabs 1-2 active in Phase 4
+          const isDisabled = false; // All tabs active in Phase 5
 
           return (
             <TabsTrigger

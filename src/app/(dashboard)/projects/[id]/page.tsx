@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { WorkflowTabs } from "@/components/project/workflow-tabs";
 import { ScriptTab } from "@/components/project/script-tab";
 import { SceneTab } from "@/components/project/scene-tab";
+import { VoiceTab } from "@/components/project/voice-tab";
+import { VideoTab } from "@/components/project/video-tab";
 
 interface Project {
   id: string;
@@ -36,6 +38,47 @@ export default function ProjectDetailPage() {
   const [description, setDescription] = useState("");
   const [activeTab, setActiveTab] = useState("script");
   const [showSettings, setShowSettings] = useState(false);
+  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null);
+  const [voiceScenes, setVoiceScenes] = useState<
+    Array<{ id: string; sceneIndex: number; narration: string; audioUrl?: string }>
+  >([]);
+
+  // Fetch selected script and its scenes for Voice/Video tabs
+  useEffect(() => {
+    async function fetchScriptAndScenes() {
+      try {
+        // Find the selected script for this project
+        const scriptsRes = await fetch(`/api/projects/${projectId}/scripts`);
+        if (scriptsRes.ok) {
+          const scriptsData = await scriptsRes.json();
+          const scripts = scriptsData.scripts ?? scriptsData ?? [];
+          const selected = scripts.find((s: { isSelected: boolean }) => s.isSelected) ?? scripts[0];
+          if (selected) {
+            setSelectedScriptId(selected.id);
+            // Fetch scenes
+            const scenesRes = await fetch(
+              `/api/projects/${projectId}/scenes?scriptId=${selected.id}`
+            );
+            if (scenesRes.ok) {
+              const scenesData = await scenesRes.json();
+              const sceneList = scenesData.scenes ?? scenesData ?? [];
+              setVoiceScenes(
+                sceneList.map((s: Record<string, unknown>) => ({
+                  id: s.id as string,
+                  sceneIndex: (s.sceneIndex ?? 0) as number,
+                  narration: (s.narration ?? "") as string,
+                  audioUrl: (s.audioUrl as string) ?? undefined,
+                }))
+              );
+            }
+          }
+        }
+      } catch {
+        // Silent
+      }
+    }
+    fetchScriptAndScenes();
+  }, [projectId]);
 
   useEffect(() => {
     async function fetchProject() {
@@ -197,14 +240,26 @@ export default function ProjectDetailPage() {
         {{
           script: <ScriptTab projectId={projectId} />,
           scene: <SceneTab projectId={projectId} />,
-          voice: (
+          voice: selectedScriptId ? (
+            <VoiceTab
+              projectId={projectId}
+              scriptId={selectedScriptId}
+              scenes={voiceScenes}
+              onNextTab={() => handleTabChange("video")}
+            />
+          ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-              <p className="text-sm">음성 합성 (Phase 4에서 구현)</p>
+              <p className="text-sm">먼저 대본을 생성해주세요</p>
             </div>
           ),
-          video: (
+          video: selectedScriptId ? (
+            <VideoTab
+              projectId={projectId}
+              scriptId={selectedScriptId}
+            />
+          ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-              <p className="text-sm">최종 영상 (Phase 5에서 구현)</p>
+              <p className="text-sm">먼저 대본을 생성해주세요</p>
             </div>
           ),
         }}
