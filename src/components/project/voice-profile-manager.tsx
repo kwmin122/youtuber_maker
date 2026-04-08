@@ -156,7 +156,7 @@ export function VoiceProfileManager() {
               <Checkbox
                 id="voice-consent"
                 checked={consentChecked}
-                onCheckedChange={(checked) => setConsentChecked(checked === true)}
+                onCheckedChange={(checked: boolean | "indeterminate") => setConsentChecked(checked === true)}
               />
               <label
                 htmlFor="voice-consent"

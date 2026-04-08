@@ -101,7 +101,7 @@ export function SceneCard({
             <div className="space-y-2">
               <Textarea
                 value={editNarration}
-                onChange={(e) => setEditNarration(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditNarration(e.target.value)}
                 rows={3}
                 className="text-sm"
               />
@@ -119,7 +119,7 @@ export function SceneCard({
             </label>
             <Textarea
               value={editImagePrompt}
-              onChange={(e) => setEditImagePrompt(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditImagePrompt(e.target.value)}
               rows={2}
               className="text-sm"
             />
