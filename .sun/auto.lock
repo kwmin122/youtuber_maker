@@ -1,11 +1,11 @@
 {
   "startedAt": "2026-04-08T09:50:00+09:00",
-  "currentPhase": 4,
-  "completedPhases": [1, 2, 3],
+  "currentPhase": 5,
+  "completedPhases": [1, 2, 3, 4],
   "retryCount": {},
   "status": "running",
   "blockedAt": null,
   "blockerMessage": null,
   "budgetAtStart": 0,
-  "phasesRun": [1, 2, 3]
+  "phasesRun": [1, 2, 3, 4]
 }
