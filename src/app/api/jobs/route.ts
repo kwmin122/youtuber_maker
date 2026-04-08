@@ -6,7 +6,7 @@ import { getQueue } from "@/lib/queue";
 import { getServerSession } from "@/lib/auth/get-session";
 import { eq, desc, and } from "drizzle-orm";
 
-const ALLOWED_JOB_TYPES = ["test", "transcript-collect"] as const;
+const ALLOWED_JOB_TYPES = ["test", "transcript-collect", "analyze-benchmark"] as const;
 
 const submitJobSchema = z.object({
   type: z.enum(ALLOWED_JOB_TYPES),
