@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { handleTestJob } from "./handlers/test-job";
 import { handleTranscriptCollect } from "./handlers/transcript-collect";
 import { handleAnalyzeBenchmark } from "./handlers/analyze-benchmark";
+import { handleGenerateScript } from "./handlers/generate-script";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -12,6 +13,8 @@ export async function processJob(job: Job) {
       return handleTranscriptCollect(job, db);
     case "analyze-benchmark":
       return handleAnalyzeBenchmark(job, db);
+    case "generate-script":
+      return handleGenerateScript(job, db);
     default:
       throw new Error(`Unknown job type: ${job.name}`);
   }
