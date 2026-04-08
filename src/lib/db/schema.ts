@@ -154,7 +154,9 @@ export const transcripts = pgTable("transcripts", {
   fullText: text("full_text").notNull(),          // denormalized for Phase 3 AI (D-10)
   fetchedAt: timestamp("fetched_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("transcripts_video_id_idx").on(table.videoId),
+]);
 
 export const projectChannels = pgTable("project_channels", {
   id: uuid("id").defaultRandom().primaryKey(),

@@ -10,6 +10,7 @@ import {
 } from "@/lib/youtube/metrics";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MIN_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1 hour minimum between force refreshes
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -54,11 +55,19 @@ export async function GET(request: NextRequest, { params }: Params) {
     .limit(1);
 
   const now = new Date();
+  const timeSinceLastFetch =
+    existingVideos.length > 0
+      ? now.getTime() - existingVideos[0].fetchedAt.getTime()
+      : Infinity;
+
+  // Enforce minimum interval on force refresh to prevent quota abuse
+  const refreshAllowed =
+    forceRefresh && timeSinceLastFetch >= MIN_REFRESH_INTERVAL_MS;
+
   const needsFetch =
-    forceRefresh ||
+    refreshAllowed ||
     existingVideos.length === 0 ||
-    now.getTime() - existingVideos[0].fetchedAt.getTime() >
-      STALE_THRESHOLD_MS;
+    timeSinceLastFetch > STALE_THRESHOLD_MS;
 
   if (needsFetch) {
     try {

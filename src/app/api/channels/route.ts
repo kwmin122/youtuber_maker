@@ -52,17 +52,25 @@ export async function POST(request: NextRequest) {
   // Resolve channel data from YouTube API
   let channelData: YouTubeChannelData | null = null;
 
-  switch (parsedUrl.type) {
-    case "channel_id":
-      channelData = await fetchChannelById(parsedUrl.value);
-      break;
-    case "handle":
-      channelData = await fetchChannelByHandle(parsedUrl.value);
-      break;
-    case "custom":
-      // Try as handle first (most custom URLs work as handles)
-      channelData = await fetchChannelByHandle(parsedUrl.value);
-      break;
+  try {
+    switch (parsedUrl.type) {
+      case "channel_id":
+        channelData = await fetchChannelById(parsedUrl.value);
+        break;
+      case "handle":
+        channelData = await fetchChannelByHandle(parsedUrl.value);
+        break;
+      case "custom":
+        channelData = await fetchChannelByHandle(parsedUrl.value);
+        break;
+    }
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "YouTube API error";
+    return NextResponse.json(
+      { error: "Failed to fetch channel from YouTube", details: message },
+      { status: 502 }
+    );
   }
 
   if (!channelData) {
