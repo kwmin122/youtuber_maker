@@ -10,7 +10,7 @@
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Foundation** - 인증, API 키 관리, DB 스키마, BullMQ 워커 인프라, 프로젝트 저장/불러오기
+- [x] **Phase 1: Foundation** - 인증, API 키 관리, DB 스키마, BullMQ 워커 인프라, 프로젝트 저장/불러오기
 - [ ] **Phase 2: Channel Intelligence** - YouTube 채널 검색, 영상 데이터 수집, 자막 수집 및 저장
 - [ ] **Phase 3: Script Generation** - 벤치마킹 분석, AI 대본 생성, A/B 변형, 4단계 탭 UI
 - [ ] **Phase 4: Media Production** - 장면 분할, AI 이미지/영상 생성, TTS 보이스 클로닝, 무음 제거
@@ -108,7 +108,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/TBD | Not started | - |
+| 1. Foundation | 2/2 | Complete | 2026-04-08 |
 | 2. Channel Intelligence | 0/TBD | Not started | - |
 | 3. Script Generation | 0/TBD | Not started | - |
 | 4. Media Production | 0/TBD | Not started | - |
