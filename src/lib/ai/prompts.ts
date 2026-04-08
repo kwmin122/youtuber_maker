@@ -106,3 +106,112 @@ export function parseBenchmarkAnalysisResponse(
     );
   }
 }
+
+// ---------- Script Generation ----------
+
+export interface ScriptGenerationInput {
+  topicTitle: string;
+  topicDescription: string;
+  toneAnalysis: BenchmarkAnalysisResult["toneAnalysis"];
+  hookType: string;
+  structureType: string;
+  variant: "A" | "B" | "C";
+  /** Hook/structure combos to differentiate variants */
+  variantStrategy: string;
+}
+
+/**
+ * Build the script generation prompt.
+ * Generates a 60-second YouTube Shorts script (~150-200 words Korean).
+ */
+export function buildScriptGenerationPrompt(
+  input: ScriptGenerationInput
+): { systemInstruction: string; userPrompt: string } {
+  const systemInstruction = `You are a professional YouTube Shorts scriptwriter. Write compelling, engaging scripts that match the provided tone and structure. Always respond in Korean. Return ONLY the script text — no JSON, no markdown headers, no metadata.`;
+
+  const userPrompt = `## 대본 생성 요청
+
+### 주제
+- 제목: ${input.topicTitle}
+- 설명: ${input.topicDescription}
+
+### 채널 말투 분석
+- 스타일: ${input.toneAnalysis.style}
+- 격식: ${input.toneAnalysis.formality}
+- 감정 톤: ${input.toneAnalysis.emotionalTone}
+- 자주 쓰는 문장 끝 패턴: ${input.toneAnalysis.sentenceEndings.join(", ")}
+- 자주 쓰는 표현: ${input.toneAnalysis.frequentExpressions.join(", ")}
+
+### 변형 전략 (Variant ${input.variant})
+- 후킹 방식: ${input.hookType}
+- 구조: ${input.structureType}
+- 차별화 전략: ${input.variantStrategy}
+
+### 규칙
+1. **분량**: 60초 기준, 150~200단어 (한국어 기준)
+2. **후킹**: 처음 3초 내에 시청자의 주의를 끌 것 (위 후킹 방식 사용)
+3. **말투**: 위 채널 말투 분석을 정확히 반영할 것
+4. **구조**: 위 구조 패턴을 따를 것
+5. **CTA**: 마지막에 자연스러운 행동 유도 (구독, 좋아요, 댓글 중 하나)
+6. **형식**: 대본 텍스트만 작성. 장면 지시, 번호 매기기, 메타데이터 금지.
+
+대본을 작성하세요:`;
+
+  return { systemInstruction, userPrompt };
+}
+
+/**
+ * Variant strategy descriptions for A/B/C differentiation.
+ * Used to generate diverse scripts for the same topic.
+ */
+export function getVariantStrategies(
+  hookingPatterns: Array<{ type: string; description: string }>,
+  structurePatterns: Array<{ name: string; sections: string[] }>
+): Array<{
+  variant: "A" | "B" | "C";
+  hookType: string;
+  structureType: string;
+  strategy: string;
+}> {
+  const hooks = hookingPatterns.length > 0
+    ? hookingPatterns
+    : [{ type: "question", description: "질문으로 시작" }];
+  const structures = structurePatterns.length > 0
+    ? structurePatterns
+    : [{ name: "problem-solution", sections: ["문제", "해결"] }];
+
+  const strategies: Array<{
+    variant: "A" | "B" | "C";
+    hookType: string;
+    structureType: string;
+    strategy: string;
+  }> = [];
+
+  // Variant A: most common hook + most common structure
+  strategies.push({
+    variant: "A",
+    hookType: hooks[0].type,
+    structureType: structures[0].name,
+    strategy: `가장 검증된 조합: "${hooks[0].description}" 후킹 + "${structures[0].name}" 구조`,
+  });
+
+  // Variant B: second hook (or rotated) + second structure (or rotated)
+  strategies.push({
+    variant: "B",
+    hookType: hooks[Math.min(1, hooks.length - 1)].type,
+    structureType: structures[Math.min(1, structures.length - 1)].name,
+    strategy: `대안 조합: 다른 후킹/구조로 신선한 접근`,
+  });
+
+  // Variant C: creative mix
+  if (hooks.length >= 2 || structures.length >= 2) {
+    strategies.push({
+      variant: "C",
+      hookType: hooks[hooks.length - 1].type,
+      structureType: structures[structures.length - 1].name,
+      strategy: `실험적 조합: 가장 독특한 후킹 + 구조 패턴 조합`,
+    });
+  }
+
+  return strategies;
+}
