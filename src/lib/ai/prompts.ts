@@ -215,3 +215,110 @@ export function getVariantStrategies(
 
   return strategies;
 }
+
+// ---------- Scene Splitting ----------
+
+export interface SceneSplitInput {
+  scriptContent: string;
+  scriptTitle: string;
+  /** Target number of scenes (4-8 for 60s Shorts) */
+  targetSceneCount?: number;
+  /** Preferred image style for prompt generation */
+  imageStyle?: string;
+}
+
+/**
+ * Build the scene splitting prompt.
+ * Splits a 60-second Shorts script into 4-8 scenes, each with
+ * narration text, image generation prompt, and video generation prompt.
+ */
+export function buildSceneSplitPrompt(
+  input: SceneSplitInput
+): { systemInstruction: string; userPrompt: string } {
+  const targetCount = input.targetSceneCount ?? 6;
+
+  const systemInstruction = `You are a professional YouTube Shorts scene director. Split scripts into visual scenes, generating precise image and video prompts for each. Always respond in valid JSON format.`;
+
+  const userPrompt = `## 장면 분할 요청
+
+### 대본
+제목: ${input.scriptTitle}
+
+${input.scriptContent}
+
+### 규칙
+1. **장면 수**: ${targetCount}개 (최소 4, 최대 8)
+2. **각 장면**:
+   - narration: 해당 장면에서 읽을 나레이션 텍스트 (원문 대본에서 분할)
+   - imagePrompt: DALL-E 3용 이미지 생성 프롬프트 (영어, 상세하게, 9:16 세로 구도 명시)${input.imageStyle ? ` 스타일: ${input.imageStyle}` : ""}
+   - videoPrompt: Kling용 영상 생성 프롬프트 (영어, 카메라 움직임/모션 묘사 포함)
+   - estimatedDuration: 예상 소요 시간 (초, 3~8초, 전체 합 55~65초)
+3. **나레이션 분할**: 원문 대본의 모든 텍스트가 빠짐없이 장면에 배분되어야 함
+4. **이미지 프롬프트**: 구체적인 시각 요소 (인물, 배경, 조명, 색감, 구도) 포함. "Vertical 9:16 composition" 명시
+5. **영상 프롬프트**: 카메라 움직임 (zoom in, pan, tilt 등), 모션 방향, 속도감 포함
+
+### 응답 형식 (JSON)
+\`\`\`json
+{
+  "scenes": [
+    {
+      "sceneIndex": 0,
+      "narration": "장면 나레이션 텍스트",
+      "imagePrompt": "Detailed English image prompt for DALL-E 3, vertical 9:16 composition, ...",
+      "videoPrompt": "English video prompt for Kling: camera slowly zooms in on ..., motion direction ...",
+      "estimatedDuration": 5
+    }
+  ],
+  "totalEstimatedDuration": 60
+}
+\`\`\`
+
+위 형식으로 JSON만 반환하세요:`;
+
+  return { systemInstruction, userPrompt };
+}
+
+/**
+ * Parse the scene-split AI response into a typed SceneSplitResult.
+ * Handles markdown-wrapped JSON and validates required fields.
+ */
+export function parseSceneSplitResponse(raw: string): import("@/lib/media/types").SceneSplitResult {
+  // Strip markdown code fences if present
+  let cleaned = raw.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error(`Failed to parse scene-split response as JSON: ${cleaned.slice(0, 200)}`);
+  }
+
+  const data = parsed as Record<string, unknown>;
+  if (!Array.isArray(data.scenes) || data.scenes.length === 0) {
+    throw new Error("Scene-split response missing 'scenes' array");
+  }
+
+  const scenes = data.scenes.map((s: Record<string, unknown>, i: number) => {
+    if (!s.narration || !s.imagePrompt || !s.videoPrompt) {
+      throw new Error(`Scene ${i} missing required fields (narration, imagePrompt, videoPrompt)`);
+    }
+    return {
+      sceneIndex: typeof s.sceneIndex === "number" ? s.sceneIndex : i,
+      narration: String(s.narration),
+      imagePrompt: String(s.imagePrompt),
+      videoPrompt: String(s.videoPrompt),
+      estimatedDuration: typeof s.estimatedDuration === "number" ? s.estimatedDuration : 5,
+    };
+  });
+
+  return {
+    scenes,
+    totalEstimatedDuration:
+      typeof data.totalEstimatedDuration === "number"
+        ? data.totalEstimatedDuration
+        : scenes.reduce((sum, s) => sum + s.estimatedDuration, 0),
+  };
+}
