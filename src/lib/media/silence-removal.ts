@@ -23,7 +23,7 @@ export interface SilenceSegment {
 /**
  * Detect silence segments in an audio file using FFmpeg silencedetect filter.
  *
- * IMPORTANT: Uses child_process.spawn, NOT fluent-ffmpeg (per CLAUDE.md).
+ * IMPORTANT: Uses child_process.spawn per CLAUDE.md requirement.
  *
  * @param audioBuffer - Raw audio file buffer
  * @param options - Detection thresholds
