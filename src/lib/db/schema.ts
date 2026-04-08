@@ -5,6 +5,9 @@ import {
   integer,
   jsonb,
   uuid,
+  bigint,
+  real,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // Re-export better-auth tables from the fork's schema
@@ -85,3 +88,83 @@ export const jobEvents = pgTable("job_events", {
   data: jsonb("data"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ---------- Phase 2 Tables ----------
+
+export const channels = pgTable("channels", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  youtubeChannelId: text("youtube_channel_id").notNull(),
+  title: text("title").notNull(),
+  handle: text("handle"),                      // @handle
+  customUrl: text("custom_url"),                // /c/customname
+  description: text("description"),
+  thumbnailUrl: text("thumbnail_url"),
+  bannerUrl: text("banner_url"),
+  subscriberCount: bigint("subscriber_count", { mode: "number" }),
+  videoCount: bigint("video_count", { mode: "number" }),
+  viewCount: bigint("view_count", { mode: "number" }),
+  country: text("country"),
+  publishedAt: timestamp("published_at"),       // channel creation date
+  fetchedAt: timestamp("fetched_at").notNull(), // for cache staleness check (D-03)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("channels_user_yt_id_idx").on(table.userId, table.youtubeChannelId),
+]);
+
+export const videos = pgTable("videos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  channelId: uuid("channel_id")
+    .notNull()
+    .references(() => channels.id, { onDelete: "cascade" }),
+  youtubeVideoId: text("youtube_video_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  thumbnailUrl: text("thumbnail_url"),
+  publishedAt: timestamp("published_at"),
+  duration: text("duration"),                   // ISO 8601 duration (PT1M30S)
+  viewCount: bigint("view_count", { mode: "number" }).default(0),
+  likeCount: bigint("like_count", { mode: "number" }).default(0),
+  commentCount: bigint("comment_count", { mode: "number" }).default(0),
+  performanceScore: real("performance_score"),   // viewCount / subscriberCount (D-04)
+  engagementRate: real("engagement_rate"),        // (likes+comments)/views*100 (D-06)
+  tags: jsonb("tags").$type<string[]>(),
+  fetchedAt: timestamp("fetched_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("videos_channel_yt_id_idx").on(table.channelId, table.youtubeVideoId),
+]);
+
+export const transcripts = pgTable("transcripts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  videoId: uuid("video_id")
+    .notNull()
+    .references(() => videos.id, { onDelete: "cascade" }),
+  language: text("language").notNull(),          // 'ko', 'en', 'auto', etc.
+  source: text("source").notNull(),              // 'youtube-transcript' | 'google-stt'
+  segments: jsonb("segments").$type<Array<{
+    text: string;
+    offset: number;   // ms
+    duration: number;  // ms
+  }>>().notNull(),
+  fullText: text("full_text").notNull(),          // denormalized for Phase 3 AI (D-10)
+  fetchedAt: timestamp("fetched_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const projectChannels = pgTable("project_channels", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  channelId: uuid("channel_id")
+    .notNull()
+    .references(() => channels.id, { onDelete: "cascade" }),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("project_channels_unique_idx").on(table.projectId, table.channelId),
+]);
