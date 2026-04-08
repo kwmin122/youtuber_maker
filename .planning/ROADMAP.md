@@ -11,7 +11,7 @@
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Foundation** - 인증, API 키 관리, DB 스키마, BullMQ 워커 인프라, 프로젝트 저장/불러오기
-- [ ] **Phase 2: Channel Intelligence** - YouTube 채널 검색, 영상 데이터 수집, 자막 수집 및 저장
+- [x] **Phase 2: Channel Intelligence** - YouTube 채널 검색, 영상 데이터 수집, 자막 수집 및 저장
 - [ ] **Phase 3: Script Generation** - 벤치마킹 분석, AI 대본 생성, A/B 변형, 4단계 탭 UI
 - [ ] **Phase 4: Media Production** - 장면 분할, AI 이미지/영상 생성, TTS 보이스 클로닝, 무음 제거
 - [ ] **Phase 5: Video Assembly (Opencut Fork)** - Opencut fork 기반 자막 편집, 트랜지션, 효과음/BGM, 미리보기, MP4 내보내기
@@ -109,7 +109,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-04-08 |
-| 2. Channel Intelligence | 0/TBD | Not started | - |
+| 2. Channel Intelligence | 2/2 | Complete | 2026-04-08 |
 | 3. Script Generation | 0/TBD | Not started | - |
 | 4. Media Production | 0/TBD | Not started | - |
 | 5. Video Assembly (Opencut Fork) | 0/TBD | Not started | - |
