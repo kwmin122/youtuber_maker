@@ -5,7 +5,8 @@ import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { JobProgress } from "@/components/job-progress";
+import { WorkflowTabs } from "@/components/project/workflow-tabs";
+import { ScriptTab } from "@/components/project/script-tab";
 
 interface Project {
   id: string;
@@ -32,11 +33,8 @@ export default function ProjectDetailPage() {
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-
-  // Test job state
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [supabaseJwt, setSupabaseJwt] = useState<string | null>(null);
-  const [submittingJob, setSubmittingJob] = useState(false);
+  const [activeTab, setActiveTab] = useState("script");
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     async function fetchProject() {
@@ -47,6 +45,10 @@ export default function ProjectDetailPage() {
           setProject(data);
           setTitle(data.title);
           setDescription(data.description || "");
+          // Restore last active tab
+          if (data.workflowState?.lastActiveTab) {
+            setActiveTab(data.workflowState.lastActiveTab);
+          }
         } else {
           router.push("/projects");
         }
@@ -59,31 +61,26 @@ export default function ProjectDetailPage() {
     fetchProject();
   }, [projectId, router]);
 
-  async function handleRunTestJob() {
-    setSubmittingJob(true);
+  // Persist active tab to workflowState
+  async function handleTabChange(tab: string) {
+    setActiveTab(tab);
     try {
-      // Submit test job
-      const jobRes = await fetch("/api/jobs", {
-        method: "POST",
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "test", projectId }),
+        body: JSON.stringify({
+          workflowState: {
+            ...project?.workflowState,
+            currentStep: project?.workflowState?.currentStep ?? 1,
+            lastActiveTab: tab,
+            completedSteps: project?.workflowState?.completedSteps ?? [],
+            lastEditedAt: new Date().toISOString(),
+            draftFlags: project?.workflowState?.draftFlags ?? {},
+          },
+        }),
       });
-
-      if (!jobRes.ok) throw new Error("Failed to submit job");
-
-      const { jobId: newJobId } = await jobRes.json();
-      setJobId(newJobId);
-
-      // Get Supabase JWT for Realtime subscription
-      const tokenRes = await fetch("/api/supabase-token");
-      if (tokenRes.ok) {
-        const { token } = await tokenRes.json();
-        setSupabaseJwt(token);
-      }
     } catch {
-      // Handle error silently
-    } finally {
-      setSubmittingJob(false);
+      // Silent
     }
   }
 
@@ -99,16 +96,17 @@ export default function ProjectDetailPage() {
       if (res.ok) {
         const updated = await res.json();
         setProject(updated);
+        setShowSettings(false);
       }
     } catch {
-      // Silently handle save errors
+      // Silent
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm("Are you sure you want to delete this project?")) return;
+    if (!confirm("프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
 
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
@@ -119,7 +117,7 @@ export default function ProjectDetailPage() {
         router.push("/projects");
       }
     } catch {
-      // Silently handle delete errors
+      // Silent
     }
   }
 
@@ -133,66 +131,87 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Project Details</h1>
+        <div>
+          <h1 className="text-2xl font-bold">{project.title}</h1>
+          {project.description && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {project.description}
+            </p>
+          )}
+        </div>
         <div className="flex gap-2">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSettings(!showSettings)}
+          >
+            {showSettings ? "닫기" : "설정"}
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
-            Delete
-          </Button>
         </div>
       </div>
 
-      {/* Progress indicator */}
-      <div className="rounded-lg border p-4">
-        <p className="text-sm text-muted-foreground">
-          Current Step: {project.workflowState?.currentStep ?? 1} |
-          Tab: {project.workflowState?.lastActiveTab ?? "script"}
-        </p>
-        <div className="mt-2 h-2 w-full rounded-full bg-muted">
-          <div
-            className="h-2 rounded-full bg-primary transition-all"
-            style={{
-              width: `${((project.workflowState?.currentStep ?? 1) / 7) * 100}%`,
-            }}
-          />
+      {/* Settings panel (collapsible) */}
+      {showSettings && (
+        <div className="space-y-4 rounded-lg border p-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">제목</Label>
+            <Input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">설명</Label>
+            <Input
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="프로젝트 설명"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleSave} disabled={saving} size="sm">
+              {saving ? "저장 중..." : "저장"}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+            >
+              삭제
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="title">Title</Label>
-          <Input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="description">Description</Label>
-          <Input
-            id="description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Project description"
-          />
-        </div>
-      </div>
-
-      {/* Test Job Section */}
-      <div className="space-y-3 rounded-lg border p-4">
-        <h2 className="text-lg font-semibold">Worker Test</h2>
-        <Button
-          onClick={handleRunTestJob}
-          disabled={submittingJob}
-          variant="outline"
-        >
-          {submittingJob ? "Submitting..." : "테스트 작업 실행"}
-        </Button>
-        <JobProgress jobId={jobId} supabaseJwt={supabaseJwt} />
-      </div>
+      {/* 4-Step Workflow Tabs (UX-01) */}
+      <WorkflowTabs
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        completedSteps={project.workflowState?.completedSteps ?? []}
+      >
+        {{
+          script: <ScriptTab projectId={projectId} />,
+          scene: (
+            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              <p className="text-sm">장면/이미지 생성 (Phase 4에서 구현)</p>
+            </div>
+          ),
+          voice: (
+            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              <p className="text-sm">음성 합성 (Phase 4에서 구현)</p>
+            </div>
+          ),
+          video: (
+            <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+              <p className="text-sm">최종 영상 (Phase 5에서 구현)</p>
+            </div>
+          ),
+        }}
+      </WorkflowTabs>
     </div>
   );
 }
