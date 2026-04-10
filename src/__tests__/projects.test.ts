@@ -129,7 +129,9 @@ describe("Projects Route - /api/projects", () => {
     it("should return 401 when not authenticated", async () => {
       mockGetServerSession.mockResolvedValue(null as any);
 
-      const response = await GET();
+      const response = await GET(
+        new Request("http://localhost/api/projects") as any
+      );
 
       expect(response.status).toBe(401);
     });
@@ -169,7 +171,9 @@ describe("Projects Route - /api/projects", () => {
         }),
       });
 
-      const response = await GET();
+      const response = await GET(
+        new Request("http://localhost/api/projects") as any
+      );
 
       expect(response.status).toBe(200);
       const data = await response.json();

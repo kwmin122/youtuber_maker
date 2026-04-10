@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/get-session";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 const createProjectSchema = z.object({
   title: z.string().min(1).max(200),
@@ -46,16 +46,24 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(created, { status: 201 });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const parentLongformId = searchParams.get("parentLongformId");
+
+  const conditions = [eq(projects.userId, session.user.id)];
+  if (parentLongformId) {
+    conditions.push(eq(projects.parentLongformId, parentLongformId));
+  }
+
   const userProjects = await db
     .select()
     .from(projects)
-    .where(eq(projects.userId, session.user.id))
+    .where(and(...conditions))
     .orderBy(desc(projects.updatedAt));
 
   return NextResponse.json(userProjects);
