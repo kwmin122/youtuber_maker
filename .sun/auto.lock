@@ -1,12 +1,12 @@
 {
   "startedAt": "2026-04-10T00:00:00Z",
-  "currentPhase": 7,
-  "completedPhases": [],
-  "retryCount": {},
+  "currentPhase": 8,
+  "completedPhases": [7],
+  "retryCount": {"7": 1},
   "status": "running",
   "blockedAt": null,
   "blockerMessage": null,
   "budgetAtStart": 0,
-  "phasesRun": [],
+  "phasesRun": [7],
   "milestone": "v2"
 }

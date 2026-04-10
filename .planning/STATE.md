@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 ## Current Position
 
 Milestone: v2 (in progress)
-Phase: 7 of 11 (Long-form to Shorts Clipping)
+Phase: 8 of 11 (AI Avatar & Lipsync)
 Plan: 0 of TBD in current phase
-Status: Ready to start autonomous v2 run
-Last activity: 2026-04-09 -- v1 archived, v2 ROADMAP created
+Status: Phase 7 complete (328 tests, PASS), moving to Phase 8
+Last activity: 2026-04-10 -- Phase 7 shipped (CORE-07)
 
-Progress: v1=100%, v2=[░░░░░░░░░░] 0%
+Progress: v1=100%, v2=[██░░░░░░░░] 20% (1/5 phases)
 
 ## Accumulated Context
 
