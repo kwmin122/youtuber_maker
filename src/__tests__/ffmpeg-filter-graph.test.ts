@@ -69,14 +69,40 @@ describe("buildSubtitleFilter", () => {
 
 describe("buildAudioMixFilter", () => {
   it("concatenates narration tracks", () => {
-    const result = buildAudioMixFilter(3, [], 15);
+    // narrationBaseIndex = 3 (i.e. inputs [3:a], [4:a], [5:a])
+    const result = buildAudioMixFilter(3, [], 15, 3);
     expect(result).toContain("concat=n=3");
+    // Must relabel real input streams [3:a]..[5:a] to pad labels [a0]..[a2].
+    expect(result).toContain("[3:a]asetpts=PTS-STARTPTS[a0]");
+    expect(result).toContain("[4:a]asetpts=PTS-STARTPTS[a1]");
+    expect(result).toContain("[5:a]asetpts=PTS-STARTPTS[a2]");
   });
 
   it("includes volume filter for BGM", () => {
-    const result = buildAudioMixFilter(2, [{ startTime: 0, endTime: null, volume: 0.3 }], 10);
+    // 2 visuals + 2 narrations + 1 BGM, bgmBaseIndex = 4
+    const result = buildAudioMixFilter(
+      2,
+      [{ startTime: 0, endTime: null, volume: 0.3 }],
+      10,
+      2,
+      4
+    );
     expect(result).toContain("volume=0.3");
     expect(result).toContain("amix");
+    // BGM must reference [4:a], not [2:a]
+    expect(result).toContain("[4:a]atrim");
+  });
+
+  it("regression: narration label [a0] comes from an upstream asetpts node, not a phantom stream specifier", () => {
+    // Phase 7 retry 2 — Codex ran FFmpeg against the old filter graph
+    // and it died with `Stream specifier 'a0' matches no streams`.
+    // The fix is to ALWAYS emit `[N:a]asetpts=...[aK]` nodes before
+    // using `[aK]` downstream, so `[aK]` is a real filter pad label.
+    const result = buildAudioMixFilter(1, [], 30, 1);
+    // Must NOT start with `[a0]concat` — that was the broken form.
+    expect(result).not.toMatch(/^\[a0\]concat/);
+    // Must produce the upstream asetpts relabel node.
+    expect(result).toMatch(/\[1:a\]asetpts=PTS-STARTPTS\[a0\]/);
   });
 });
 

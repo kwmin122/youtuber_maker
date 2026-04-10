@@ -162,19 +162,45 @@ export function buildSubtitleFilter(
 
 /**
  * Build audio mix filter: concat narration tracks + mix with BGM.
+ *
+ * IMPORTANT — input indexing contract:
+ *   The caller MUST pass `narrationBaseIndex` equal to the FFmpeg
+ *   input index (0-based) of the first narration audio file on the
+ *   ffmpeg command line, and `bgmBaseIndex` equal to the first BGM
+ *   track's input index. This filter then references streams as
+ *   `[N:a]` where N is the actual input index, and relabels them to
+ *   stable `[a0]`, `[a1]`, ... / `[bgm0]` before concat/mix.
+ *
+ *   Without this relabeling, the legacy pre-2026-04-10 behavior wrote
+ *   `[a0]concat...` directly, but `[a0]` is NOT a valid FFmpeg stream
+ *   specifier — it is only a named pad label that must be produced by
+ *   an upstream filter node. FFmpeg therefore failed with
+ *   "Stream specifier 'a0' matches no streams" (Codex review,
+ *   Phase 7 retry 2).
  */
 export function buildAudioMixFilter(
   narrationCount: number,
   bgmTracks: { startTime: number; endTime: number | null; volume: number }[],
-  totalDuration: number
+  totalDuration: number,
+  narrationBaseIndex: number = 0,
+  bgmBaseIndex: number = narrationCount
 ): string {
   if (narrationCount === 0 && bgmTracks.length === 0) return "";
 
   const filters: string[] = [];
   let mixInputCount = 0;
 
-  // Concat all narration audio streams
+  // Concat all narration audio streams.
+  // First relabel each real input stream `[N:a]` to a stable pad
+  // `[a0]`, `[a1]`, ... via a no-op `asetpts=PTS-STARTPTS` node. That
+  // also resets each narration's PTS so concat doesn't fight over
+  // timestamps when narrations were encoded with non-zero starts
+  // (common with mp3 gaps).
   if (narrationCount > 0) {
+    for (let i = 0; i < narrationCount; i++) {
+      const inputIdx = narrationBaseIndex + i;
+      filters.push(`[${inputIdx}:a]asetpts=PTS-STARTPTS[a${i}]`);
+    }
     const narrLabels = Array.from(
       { length: narrationCount },
       (_, i) => `[a${i}]`
@@ -184,9 +210,8 @@ export function buildAudioMixFilter(
   }
 
   // Process BGM tracks
-  const bgmStartIndex = narrationCount;
   bgmTracks.forEach((bgm, i) => {
-    const inputIdx = bgmStartIndex + i;
+    const inputIdx = bgmBaseIndex + i;
     const endTime = bgm.endTime ?? totalDuration;
     const delayMs = Math.round(bgm.startTime * 1000);
 
@@ -247,14 +272,28 @@ export function buildFullFilterGraph(request: ExportRequest): {
   if (transitionFilters) filterParts.push(transitionFilters);
 
   // 3. Audio mix filter
+  //
+  // Input index contract (must mirror ffmpeg-export.ts input ordering):
+  //   - inputs [0 .. scenes.length - 1]               = scene visuals
+  //   - inputs [scenes.length .. scenes.length + N-1] = N narration mp3s
+  //       (one per scene WITH audioUrl)
+  //   - inputs [scenes.length + N ..]                 = M BGM tracks
   const narrCount = scenes.filter((s) => s.audioUrl).length;
+  const narrationBaseIndex = scenes.length;
+  const bgmBaseIndex = scenes.length + narrCount;
   const bgmConfigs = audioTracks.map((t) => ({
     startTime: t.startTime,
     endTime: t.endTime,
     volume: t.volume,
   }));
   const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
-  const audioFilter = buildAudioMixFilter(narrCount, bgmConfigs, totalDuration);
+  const audioFilter = buildAudioMixFilter(
+    narrCount,
+    bgmConfigs,
+    totalDuration,
+    narrationBaseIndex,
+    bgmBaseIndex
+  );
   if (audioFilter) filterParts.push(audioFilter);
 
   // Only declare `[aout]` in the output maps when the audio filter
