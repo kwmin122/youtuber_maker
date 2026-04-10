@@ -68,3 +68,52 @@ export function parseChannelUrl(input: string): ParsedChannelUrl {
 
   return null;
 }
+
+/**
+ * Parse a YouTube video URL (or bare 11-char video id) and extract the
+ * video id. Accepts watch URLs, youtu.be short links, /shorts/ URLs,
+ * mobile URLs, and bare ids. Returns null for anything else.
+ */
+export function parseVideoUrl(
+  input: string
+): { videoId: string } | null {
+  const trimmed = input.trim();
+
+  // bare ID
+  if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) {
+    return { videoId: trimmed };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+
+  const host = url.hostname.replace(/^www\./, "").replace(/^m\./, "");
+
+  if (host === "youtu.be") {
+    const id = url.pathname.split("/").filter(Boolean)[0];
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id)
+      ? { videoId: id }
+      : null;
+  }
+
+  if (host === "youtube.com") {
+    const vParam = url.searchParams.get("v");
+    if (vParam && /^[A-Za-z0-9_-]{11}$/.test(vParam)) {
+      return { videoId: vParam };
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (
+      parts[0] === "shorts" &&
+      parts[1] &&
+      /^[A-Za-z0-9_-]{11}$/.test(parts[1])
+    ) {
+      return { videoId: parts[1] };
+    }
+  }
+
+  return null;
+}
