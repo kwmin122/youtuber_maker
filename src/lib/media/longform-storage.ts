@@ -85,10 +85,14 @@ export async function uploadLongformSourceFromPath(params: {
   const storagePath = `${params.userId}/${params.sourceId}/source.mp4`;
   const contentType = params.contentType ?? "video/mp4";
 
-  // Upsert requires us to allow overwrites on the signed URL.
+  // Pass `{ upsert: true }` at sign-time so retries can overwrite a
+  // previous partial upload without a "duplicate" error. Per
+  // @supabase/storage-js StorageFileApi.ts:347, upsert must be set at
+  // signing time (not at upload time) for signed-URL uploads.
+  // Confirmed supported in storage-js v2.102.1 (installed version).
   const { data: signed, error: signErr } = await supabase.storage
     .from(LONGFORM_BUCKET)
-    .createSignedUploadUrl(storagePath);
+    .createSignedUploadUrl(storagePath, { upsert: true });
 
   if (signErr || !signed) {
     throw new Error(
@@ -256,9 +260,12 @@ export async function uploadLongformClipFromPath(params: {
   const storagePath = `${params.userId}/longform-clips/${params.candidateId}.mp4`;
   const contentType = params.contentType ?? "video/mp4";
 
+  // Pass `{ upsert: true }` at sign-time so retries overwrite existing
+  // clips at the same path without a "duplicate" error. Phase 7 retry
+  // 3, Codex HIGH-2 fix. Supported in storage-js v2.102.1.
   const { data: signed, error: signErr } = await supabase.storage
     .from("media")
-    .createSignedUploadUrl(storagePath);
+    .createSignedUploadUrl(storagePath, { upsert: true });
 
   if (signErr || !signed) {
     throw new Error(
