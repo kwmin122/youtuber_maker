@@ -10,6 +10,10 @@ import { ScriptTab } from "@/components/project/script-tab";
 import { SceneTab } from "@/components/project/scene-tab";
 import { VoiceTab } from "@/components/project/voice-tab";
 import { VideoTab } from "@/components/project/video-tab";
+import { UploadPanel } from "@/components/distribution/upload-panel";
+import { SeoPreview } from "@/components/distribution/seo-preview";
+import { ThumbnailGallery } from "@/components/distribution/thumbnail-gallery";
+import { ViralScoreDisplay } from "@/components/distribution/viral-score-display";
 
 interface Project {
   id: string;
@@ -260,6 +264,14 @@ export default function ProjectDetailPage() {
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
               <p className="text-sm">먼저 대본을 생성해주세요</p>
+            </div>
+          ),
+          distribution: (
+            <div className="space-y-6">
+              <ViralScoreDisplay projectId={projectId} />
+              <SeoPreview projectId={projectId} />
+              <ThumbnailGallery projectId={projectId} />
+              <UploadPanel projectId={projectId} />
             </div>
           ),
         }}
