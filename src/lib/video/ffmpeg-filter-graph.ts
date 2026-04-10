@@ -257,9 +257,22 @@ export function buildFullFilterGraph(request: ExportRequest): {
   const audioFilter = buildAudioMixFilter(narrCount, bgmConfigs, totalDuration);
   if (audioFilter) filterParts.push(audioFilter);
 
+  // Only declare `[aout]` in the output maps when the audio filter
+  // actually produced an `[aout]` label. Otherwise FFmpeg dies with
+  // "Stream map '[aout]' matches no streams". This matches the
+  // behavior of `buildAudioMixFilter` which returns "" when there is
+  // no narration and no BGM (e.g. a freshly-created longform child
+  // project whose scene has its audio embedded in the video file —
+  // see create-child-project.ts for the mitigation that inserts a
+  // matching type='audio' media_asset row).
+  const outputMaps: string[] = ["[vout]"];
+  if (audioFilter) {
+    outputMaps.push("[aout]");
+  }
+
   return {
     filterComplex: filterParts.join(";"),
-    outputMaps: ["[vout]", "[aout]"],
+    outputMaps,
   };
 }
 

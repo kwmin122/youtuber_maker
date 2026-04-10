@@ -118,4 +118,71 @@ describe("buildFullFilterGraph", () => {
     expect(outputMaps).toContain("[vout]");
     expect(outputMaps).toContain("[aout]");
   });
+
+  it("omits [aout] from outputMaps when no narration and no BGM are present (regression: longform-clip child project export)", () => {
+    // Reproduces the Phase 7 hard failure: a freshly-created longform
+    // child project has a single scene whose audio lives inside the
+    // video file. Before the fix, audioUrl was undefined and
+    // audioTracks was empty, but outputMaps still declared `[aout]`,
+    // so FFmpeg died with "Stream map '[aout]' matches no streams".
+    //
+    // After the fix, outputMaps should only contain `[vout]` in that
+    // state so the v1 export pipeline succeeds.
+    const request: ExportRequest = {
+      projectId: "test-id",
+      scenes: [
+        {
+          sceneIndex: 0,
+          narration: "longform clip narration (embedded in video)",
+          duration: 30,
+          mediaUrl: "https://cdn.example/clip.mp4",
+          mediaType: "video",
+          // audioUrl intentionally omitted
+          subtitleStyle: DEFAULT_SUBTITLE_STYLE,
+          transitionType: "cut",
+          transitionDuration: 0,
+        },
+      ],
+      audioTracks: [],
+      outputWidth: 1080,
+      outputHeight: 1920,
+      fps: 30,
+    };
+    const { outputMaps } = buildFullFilterGraph(request);
+    expect(outputMaps).toContain("[vout]");
+    expect(outputMaps).not.toContain("[aout]");
+  });
+
+  it("still includes [aout] when any scene has audioUrl (e.g. longform-clip with a type='audio' media_asset pointing at the same mp4)", () => {
+    // This is the mitigation path: create-child-project.ts inserts a
+    // matching type='audio' media_asset whose url is the same clip
+    // mp4. export-video.ts turns that into a scene.audioUrl, which
+    // flows back through here and reinstates `[aout]`. End-to-end
+    // this means the exported short carries the clip's original
+    // voice/music.
+    const request: ExportRequest = {
+      projectId: "test-id",
+      scenes: [
+        {
+          sceneIndex: 0,
+          narration: "longform clip",
+          duration: 30,
+          mediaUrl: "https://cdn.example/clip.mp4",
+          mediaType: "video",
+          audioUrl: "https://cdn.example/clip.mp4",
+          subtitleStyle: DEFAULT_SUBTITLE_STYLE,
+          transitionType: "cut",
+          transitionDuration: 0,
+        },
+      ],
+      audioTracks: [],
+      outputWidth: 1080,
+      outputHeight: 1920,
+      fps: 30,
+    };
+    const { outputMaps, filterComplex } = buildFullFilterGraph(request);
+    expect(outputMaps).toContain("[vout]");
+    expect(outputMaps).toContain("[aout]");
+    expect(filterComplex).toContain("[aout]");
+  });
 });

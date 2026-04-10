@@ -129,6 +129,7 @@ export async function createChildProjectForClip(
       throw new Error("Failed to insert longform-clip scene row");
     }
 
+    // Insert visual asset pointing at the clipped MP4.
     await tx.insert(mediaAssets).values({
       sceneId: scene.id,
       type: "video",
@@ -141,6 +142,30 @@ export async function createChildProjectForClip(
         candidateId: candidate.id,
         startMs: candidate.startMs,
         endMs: candidate.endMs,
+      },
+    });
+
+    // Insert a matching audio asset pointing at the SAME clipped MP4.
+    // The clip MP4 has embedded AAC audio (see clip-longform.ts
+    // `-c:a aac -b:a 128k`), so using it as the scene's narration
+    // source makes the v1 export pipeline (`export-video.ts`) pick up
+    // the original speech/music without any filter-graph changes. This
+    // resolves the "[aout] matches no streams" bug that otherwise
+    // breaks every longform child project's export, because v1 emits
+    // `-map [aout]` unconditionally.
+    await tx.insert(mediaAssets).values({
+      sceneId: scene.id,
+      type: "audio",
+      url: clipPublicUrl,
+      storagePath: clipStoragePath,
+      provider: "ffmpeg-longform-clip",
+      status: "completed",
+      metadata: {
+        sourceId: source.id,
+        candidateId: candidate.id,
+        startMs: candidate.startMs,
+        endMs: candidate.endMs,
+        role: "embedded-clip-audio",
       },
     });
 

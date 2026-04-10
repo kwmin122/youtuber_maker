@@ -127,8 +127,8 @@ describe("createChildProjectForClip", () => {
     const result = await createChildProjectForClip(baseParams());
 
     expect(mockedDb.transaction).toHaveBeenCalledTimes(1);
-    // projects, scripts, scenes, media_assets = 4 inserts
-    expect(insertCalls).toHaveLength(4);
+    // projects, scripts, scenes, media_assets (video), media_assets (audio) = 5 inserts
+    expect(insertCalls).toHaveLength(5);
     // longform_candidates update = 1 update
     expect(updateCalls).toHaveLength(1);
 
@@ -186,18 +186,44 @@ describe("createChildProjectForClip", () => {
     const { tx, insertCalls } = makeTx();
     mockedDb.transaction.mockImplementation(async (cb) => cb(tx as never));
     await createChildProjectForClip(baseParams());
-    const mediaInsert = insertCalls.find(
+    const mediaInserts = insertCalls.filter(
       (c) => c.table === schema.mediaAssets
     );
-    expect(mediaInsert).toBeDefined();
-    expect(mediaInsert!.values.type).toBe("video");
-    expect(mediaInsert!.values.url).toBe("https://cdn.example/clip.mp4");
-    expect(mediaInsert!.values.storagePath).toBe(
+    expect(mediaInserts).toHaveLength(2);
+
+    const videoAsset = mediaInserts.find((c) => c.values.type === "video");
+    expect(videoAsset).toBeDefined();
+    expect(videoAsset!.values.url).toBe("https://cdn.example/clip.mp4");
+    expect(videoAsset!.values.storagePath).toBe(
       "user-1/longform-clips/cand-1.mp4"
     );
-    expect(mediaInsert!.values.provider).toBe("ffmpeg-longform-clip");
-    expect(mediaInsert!.values.status).toBe("completed");
-    expect(mediaInsert!.values.sceneId).toBe("id-3");
+    expect(videoAsset!.values.provider).toBe("ffmpeg-longform-clip");
+    expect(videoAsset!.values.status).toBe("completed");
+    expect(videoAsset!.values.sceneId).toBe("id-3");
+  });
+
+  it("inserts a type='audio' media_asset pointing at the same clip mp4 so export-video pipes original audio into [aout]", async () => {
+    const { tx, insertCalls } = makeTx();
+    mockedDb.transaction.mockImplementation(async (cb) => cb(tx as never));
+    await createChildProjectForClip(baseParams());
+    const mediaInserts = insertCalls.filter(
+      (c) => c.table === schema.mediaAssets
+    );
+    const audioAsset = mediaInserts.find((c) => c.values.type === "audio");
+    expect(audioAsset).toBeDefined();
+    // Same URL as the video asset — export-video will download the
+    // mp4 twice (once as video input, once as audio input) and FFmpeg
+    // picks the correct stream from each. This is intentional: it
+    // preserves the clip's original voice/music without any filter-
+    // graph rewrite.
+    expect(audioAsset!.values.url).toBe("https://cdn.example/clip.mp4");
+    expect(audioAsset!.values.storagePath).toBe(
+      "user-1/longform-clips/cand-1.mp4"
+    );
+    expect(audioAsset!.values.status).toBe("completed");
+    expect(audioAsset!.values.sceneId).toBe("id-3");
+    const metadata = audioAsset!.values.metadata as Record<string, unknown>;
+    expect(metadata.role).toBe("embedded-clip-audio");
   });
 
   it("updates longform_candidates.selected=true and childProjectId", async () => {
