@@ -34,3 +34,18 @@ export type ChannelSearchResult = {
   thumbnailUrl?: string;
   subscriberCount?: number;
 };
+
+/** YouTube upload snippet metadata */
+export type YouTubeUploadSnippet = {
+  title: string;
+  description: string;
+  tags: string[];
+  categoryId: string; // "22" = People & Blogs
+};
+
+/** YouTube upload status after completion */
+export type YouTubeUploadStatus = {
+  uploadStatus: string; // 'uploaded' | 'processed' | 'failed'
+  privacyStatus: string;
+  publishAt?: string;
+};
