@@ -88,6 +88,10 @@ export const projects = pgTable("projects", {
     () => longformSources.id,
     { onDelete: "set null" }
   ),
+  defaultAvatarPresetId: uuid("default_avatar_preset_id").references(
+    () => avatarPresets.id,
+    { onDelete: "set null" }
+  ),
   workflowState: jsonb("workflow_state").$type<{
     currentStep: number;
     lastActiveTab: string;
@@ -330,6 +334,18 @@ export const scenes = pgTable("scenes", {
     () => longformSources.id,
     { onDelete: "set null" }
   ),
+  avatarPresetId: uuid("avatar_preset_id").references(
+    () => avatarPresets.id,
+    { onDelete: "set null" }
+  ),
+  avatarLayout: jsonb("avatar_layout").$type<{
+    enabled: boolean;
+    position: 'bottom-right' | 'bottom-left' | 'center' | 'top-right' | 'fullscreen';
+    scale: number; // 0.2..1.0
+    paddingPx: number; // 8..64
+  } | null>(),
+  avatarVideoUrl: text("avatar_video_url"), // Supabase Storage public URL after lipsync job
+  avatarProviderTaskId: text("avatar_provider_task_id"), // provider task id for polling/idempotency
   sceneIndex: integer("scene_index").notNull(), // 0-based order within script
   narration: text("narration").notNull(), // TTS input text
   imagePrompt: text("image_prompt").notNull(), // prompt for image generation
@@ -383,6 +399,43 @@ export const voiceProfiles = pgTable("voice_profiles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ---------- Phase 8 Tables ----------
+
+export const avatarPresets = pgTable("avatar_presets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /**
+   * Nullable for global curated library presets (seed script), populated
+   * for user-owned custom presets created from an avatar_asset upload.
+   */
+  userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(), // 'heygen' | 'did'
+  providerAvatarId: text("provider_avatar_id").notNull(), // provider's avatar_id/talking_photo_id
+  gender: text("gender").notNull(), // 'male' | 'female' | 'neutral'
+  ageGroup: text("age_group").notNull(), // 'youth' | 'adult' | 'senior'
+  style: text("style").notNull(), // 'realistic' | 'cartoon' | 'anime' | 'business'
+  previewImageUrl: text("preview_image_url").notNull(),
+  voiceIdHint: text("voice_id_hint"), // nullable provider voice id hint for the TTS step
+  source: text("source").notNull().default("library"), // 'library' | 'custom'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const avatarAssets = pgTable("avatar_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  storagePath: text("storage_path").notNull(), // avatar-references/<userId>/<uuid>.ext
+  publicUrl: text("public_url").notNull(),
+  imageHash: text("image_hash").notNull(), // sha256 hex for dedupe
+  /** Timestamp when user confirmed 초상권 consent. NOT NULL at DB level. */
+  consentRecordedAt: timestamp("consent_recorded_at").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending' | 'ready' | 'failed'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("avatar_assets_user_hash_idx").on(table.userId, table.imageHash),
+]);
 
 // ---------- Phase 5 Tables ----------
 
