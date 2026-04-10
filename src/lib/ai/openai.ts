@@ -1,11 +1,22 @@
 import OpenAI from "openai";
 import type { AIProvider, GenerateOptions } from "./types";
 
+const UNSUPPORTED_MSG =
+  "OpenAI provider does not support this operation; register a Gemini API key in Settings.";
+
 export function createOpenAIProvider(apiKey: string): AIProvider {
   const client = new OpenAI({ apiKey });
 
   return {
     name: "openai",
+
+    async generateJsonFromAudio(): Promise<string> {
+      throw new Error(UNSUPPORTED_MSG);
+    },
+
+    async generateTextWithModel(): Promise<string> {
+      throw new Error(UNSUPPORTED_MSG);
+    },
 
     async generateText(prompt: string, options?: GenerateOptions): Promise<string> {
       const messages: OpenAI.ChatCompletionMessageParam[] = [];
