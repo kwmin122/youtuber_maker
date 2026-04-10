@@ -97,6 +97,80 @@ Secondary (can ship after shipping, but file tickets):
 
 ---
 
+## Retry 3 Fixes (2026-04-10)
+
+**Status**: DONE
+**Commits**: `89bc760`, `bb25110`
+**Test delta**: 352 → 355 passing (+3 new tests, 1 pre-existing skip)
+
+### Bug 1 — CAS guard checked `.rowCount` (always `undefined` on postgres-js)
+
+**Root cause**: All three longform handlers (download, analyze, clip) checked
+`(result as { rowCount?: number }).rowCount === 0` after a Drizzle `.update()`.
+postgres-js exposes `.count` (BigInt), not `.rowCount`, so `.rowCount` was
+always `undefined`. `undefined === 0` → false → the guard never fired, meaning
+stale retries could overwrite successful state.
+
+**Fix**: Replaced the `.rowCount` check with `.returning({ id: ... }).length === 0`
+in all three handlers. The `.returning()` call is type-safe and driver-portable.
+
+**Files changed**:
+- `src/worker/handlers/longform-download.ts` — CAS `pending|failed → downloading`
+- `src/worker/handlers/longform-analyze.ts` — CAS `ready → analyzing`
+- `src/worker/handlers/longform-clip.ts` — CAS `ready|analyzed → clipping`
+- `src/__tests__/longform-download-handler.test.ts` — mock chain updated to support `.returning()`
+- `src/__tests__/longform-analyze-handler.test.ts` — mock chain updated + new CAS-failure test
+- `src/__tests__/longform-clip-handler.test.ts` — mock chain updated
+
+**New tests (+1)**:
+- `longform-analyze-handler`: "aborts when CAS ready→analyzing finds no matching row (HIGH-1 fix)"
+
+### Bug 2 — Clip upload before idempotency lock + missing upsert on createSignedUploadUrl
+
+**Root cause A**: The clip loop called `uploadLongformClipFromPath` BEFORE
+`createChildProjectForClip` (which has the `FOR UPDATE` idempotency lock). On
+BullMQ retry after a partial run, a second upload created an orphaned storage
+object before the idempotency check could short-circuit.
+
+**Fix A**: Added a pre-upload DB query per candidate: if `childProjectId` is
+already set, short-circuit (recover existing project id, skip FFmpeg + upload +
+child project creation). The deterministic storage path (`<userId>/longform-clips/<candidateId>.mp4`)
+makes the upload idempotent via upsert anyway, but skipping entirely avoids
+the orphan window.
+
+**Root cause B**: `createSignedUploadUrl` was called without `{ upsert: true }`
+in both `uploadLongformSourceFromPath` and `uploadLongformClipFromPath`. Per
+storage-js v2.102.1 (`StorageFileApi.ts:347`), upsert must be set at signing
+time for signed-URL uploads — not at upload time. Without it, retries to the
+same path received "duplicate" errors.
+
+**storage-js version**: 2.102.1 — supports `{ upsert: boolean }` option on
+`createSignedUploadUrl` (confirmed at `node_modules/@supabase/storage-js/src/packages/StorageFileApi.ts:329-331`).
+
+**Fix B**: Added `{ upsert: true }` to both `createSignedUploadUrl` calls in
+`src/lib/media/longform-storage.ts`.
+
+**Files changed**:
+- `src/worker/handlers/longform-clip.ts` — pre-upload idempotency check
+- `src/lib/media/longform-storage.ts` — upsert on both createSignedUploadUrl calls
+- `src/__tests__/longform-clip-handler.test.ts` — two new idempotency tests + updated mock
+
+**New tests (+2)**:
+- `longform-clip-handler`: "skips re-upload and re-create when candidate already has a childProjectId (idempotent retry)"
+- `longform-clip-handler`: "processes new candidates normally even when a prior candidate is already done"
+
+### Acceptance criteria
+
+- [x] All CAS guards in 3 handlers use `.returning().length` — verified by grep + test
+- [x] CAS-failure path throws as expected in test — verified by new test in analyze, existing in download, existing in clip
+- [x] `createSignedUploadUrl` called with `{ upsert: true }` in both storage helpers — verified by read
+- [x] storage-js v2.102.1 supports `upsert` on `createSignedUploadUrl` — confirmed at StorageFileApi.ts:329
+- [x] Pre-upload idempotency check in clip loop — verified by new tests
+- [x] `bunx tsc --noEmit` — no new errors beyond pre-existing baseline
+- [x] `bunx vitest run` — 355/356 passing (1 pre-existing skip)
+
+---
+
 ## Retry 1 Fixes (2026-04-10)
 
 **Status**: DONE — all CRITICAL fixes landed, all secondary cleanups landed, full test suite green (328/328, +8 vs baseline), no new tsc errors.
