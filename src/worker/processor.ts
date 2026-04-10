@@ -13,6 +13,9 @@ import { handleUploadYouTube } from "./handlers/upload-youtube";
 import { handleGenerateSEO } from "./handlers/generate-seo";
 import { handleGenerateThumbnail } from "./handlers/generate-thumbnail";
 import { handleFetchMetrics } from "./handlers/fetch-metrics";
+import { handleLongformDownload } from "./handlers/longform-download";
+import { handleLongformAnalyze } from "./handlers/longform-analyze";
+import { handleLongformClip } from "./handlers/longform-clip";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -42,6 +45,12 @@ export async function processJob(job: Job) {
       return handleGenerateThumbnail(job, db);
     case "fetch-metrics":
       return handleFetchMetrics(job, db);
+    case "longform-download":
+      return handleLongformDownload(job, db);
+    case "longform-analyze":
+      return handleLongformAnalyze(job, db);
+    case "longform-clip":
+      return handleLongformClip(job, db);
     default:
       throw new Error(`Unknown job type: ${job.name}`);
   }
