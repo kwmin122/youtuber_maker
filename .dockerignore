@@ -1,0 +1,60 @@
+# Phase 7 retry 2, Codex HIGH-5.
+# Exclude everything that isn't strictly required at container build
+# time so the build context stays small AND so secrets / local state
+# can never accidentally land in the image.
+
+node_modules
+.next
+out
+build
+dist
+coverage
+
+.git
+.gitignore
+.gitattributes
+
+# Environment / secrets
+.env
+.env.*
+!env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS junk
+.DS_Store
+.vscode
+.idea
+*.swp
+
+# Local tmp
+tmp
+temp
+.tmp
+
+# SUNCO planning + agent metadata
+.planning
+.sunco
+.sun
+.agents
+.kiro
+.junie
+.antigravity
+.cursor
+.gemini
+.codex
+.claude
+.claude.json
+.claude.json.backup
+
+# Test artifacts
+test-results
+playwright-report
+
+# Supabase CLI cache
+supabase/.branches
+supabase/.temp
