@@ -10,30 +10,42 @@
 
 ## Requirements
 
-### Validated
+## Milestones
 
-(None yet — ship to validate)
+### v1 (COMPLETED 2026-04-09)
 
-### Active
+전체 쇼츠 생성 파이프라인 MVP — 벤치마킹 → 대본 → 미디어 → 편집 → 배포 원스톱.
 
-- [ ] 채널 검색 및 벤치마킹 분석 (튜브렌즈 기능)
-- [ ] YouTube API 기반 채널/영상 데이터 수집 (조회수, 구독자, 성과도, CII)
-- [ ] 자막 수집 및 엑셀/데이터 저장
-- [ ] 벤치마킹 대본 분석 → 주제 추천 (5~10개)
-- [ ] 벤치마킹 결(tone) 기반 AI 대본 생성 (후킹, 말투, 기승전결 반영)
-- [ ] 대본 A/B 테스트 — 대본 변형 여러 개 생성 후 비교
-- [ ] 장면 분석 → 나레이션 + 이미지 프롬프트 + 동영상 프롬프트 자동 생성
-- [ ] AI 이미지 생성 (장면별, 스타일/모델/캐릭터 선택)
-- [ ] AI 영상 생성 (Kling 3.0 API 연동 — Sora 종료 예정, Veo 2는 v2 검토)
-- [ ] TTS 음성 합성 (Qwen3-TTS 기반 3초 보이스 클로닝, 한국어 지원)
-- [ ] 목소리 스타일 설정 (남/여, 말투, 속도 조절)
-- [ ] 무음 구간 자동 삭제
-- [ ] 자막 편집 (폰트, 크기, 배경, 테두리, 그림자, 위치)
-- [ ] 트랜지션/이미지 효과 설정
-- [ ] 비디오 캔버스 — 최종 영상 편집 및 미리보기
-- [ ] 효과음/배경음악 삽입 (AI 생성 또는 라이브러리)
-- [ ] YouTube API 자동 업로드 (제목, 설명, 태그 포함)
-- [ ] 예약 업로드 — 지정 시간에 자동 게시
+**31/31 in-scope requirements delivered.** DATA-02 (트렌드 키워드 실시간 분석), MULTI-01 (TikTok/Reels 실제 업로드)는 v2로 이월.
+
+**Delivered:**
+- 6 phases, 12 plans, 200+ atomic commits
+- 203/203 tests passing across 32 test files
+- 223 TypeScript source files
+- Two-tier architecture: Vercel (web) + Railway (worker)
+
+**Phase breakdown:**
+- Phase 1 Foundation — better-auth, AES-256-GCM 암호화, BullMQ worker, Supabase Realtime
+- Phase 2 Channel Intelligence — YouTube Data API, 자막 수집 (youtube-transcript)
+- Phase 3 Script Generation — AI provider 추상화 (Gemini/OpenAI BYOK), 벤치마킹 분석, A/B 대본
+- Phase 4 Media Production — 장면 분할, DALL-E 3, Kling 3.0 stub, OpenAI TTS, Silero VAD 무음 제거
+- Phase 5 Video Assembly — FFmpeg 서버 렌더링, Vidstack 미리보기, wavesurfer.js 오디오 트랙
+- Phase 6 Distribution & Analytics — YouTube resumable upload, AI SEO, 바이럴 스코어, recharts 대시보드
+
+**Key learnings from v1:**
+- BYOK (Bring Your Own Key) 방식 — 서비스 비용 0원 유지
+- FFmpeg 직접 spawn — fluent-ffmpeg 의존성 제거
+- BullMQ + Supabase Realtime — 장시간 작업 진행 상태 실시간 표시
+
+### v2 (PLANNED)
+
+- CORE-07: 롱폼 영상 → 숏츠 자동 클리핑
+- MEDIA-05: AI 아바타/립싱크
+- DATA-02: 트렌드 키워드 실시간 분석 (v1 이월)
+- DATA-04: 경쟁채널 갭 분석
+- EDIT-06: AI 배경음악 자동 작곡
+- MULTI-01: TikTok/Reels 실제 업로드 (v1 이월)
+- MULTI-02: 플랫폼별 비율/캡션 자동 변환
 - [ ] AI SEO 최적화 — 제목/설명/해시태그 자동 생성, 최적 업로드 시간 추천
 - [ ] 성과 대시보드 — 업로드한 쇼츠의 조회수/좋아요/구독자 트래킹
 - [ ] 트렌드 키워드 분석 — 인기 쇼츠 키워드/해시태그 실시간 트렌드
