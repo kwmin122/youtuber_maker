@@ -16,6 +16,7 @@ import { handleFetchMetrics } from "./handlers/fetch-metrics";
 import { handleLongformDownload } from "./handlers/longform-download";
 import { handleLongformAnalyze } from "./handlers/longform-analyze";
 import { handleLongformClip } from "./handlers/longform-clip";
+import { handleGenerateAvatarLipsync } from "./handlers/generate-avatar-lipsync";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -45,6 +46,8 @@ export async function processJob(job: Job) {
       return handleGenerateThumbnail(job, db);
     case "fetch-metrics":
       return handleFetchMetrics(job, db);
+    case "generate-avatar-lipsync":
+      return handleGenerateAvatarLipsync(job, db);
     case "longform-download":
       return handleLongformDownload(job, db);
     case "longform-analyze":

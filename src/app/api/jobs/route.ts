@@ -21,6 +21,7 @@ const ALLOWED_JOB_TYPES = [
   "generate-seo",
   "generate-thumbnail",
   "fetch-metrics",
+  "generate-avatar-lipsync",
   "longform-download",
   "longform-analyze",
   "longform-clip",
