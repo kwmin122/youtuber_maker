@@ -1,7 +1,20 @@
 import { createReadStream } from "fs";
 import { stat } from "fs/promises";
-import { createSupabaseClient } from "@/lib/supabase";
+import { getServiceRoleClient } from "@/lib/supabase";
 import { LONGFORM_BUCKET } from "@/lib/video/longform-constants";
+
+/**
+ * Phase 7 retry 2, Codex CRITICAL-4: all longform storage ops run
+ * through the service-role Supabase client because Better Auth
+ * sessions are not Supabase Auth JWTs, so `auth.uid()` in RLS
+ * policies is always NULL from the anon client. The caller MUST
+ * have enforced `session.user.id` ownership on the source row via
+ * Drizzle before invoking anything in this module — RLS is defense
+ * in depth, not the primary auth check.
+ */
+function getClient() {
+  return getServiceRoleClient();
+}
 
 /**
  * Helpers for reading and writing longform source videos from the
@@ -25,7 +38,7 @@ export async function uploadLongformSource(params: {
   sourceId: string;
   buffer: Buffer;
 }): Promise<LongformUploadResult> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const storagePath = `${params.userId}/${params.sourceId}/source.mp4`;
 
   const { error } = await supabase.storage
@@ -68,7 +81,7 @@ export async function uploadLongformSourceFromPath(params: {
   filePath: string;
   contentType?: string;
 }): Promise<LongformUploadResult> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const storagePath = `${params.userId}/${params.sourceId}/source.mp4`;
   const contentType = params.contentType ?? "video/mp4";
 
@@ -130,7 +143,7 @@ export async function uploadLongformSourceFromPath(params: {
 export async function downloadLongformSource(
   storagePath: string
 ): Promise<Buffer> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const { data, error } = await supabase.storage
     .from(LONGFORM_BUCKET)
     .download(storagePath);
@@ -155,7 +168,7 @@ export async function downloadLongformSourceToPath(params: {
   storagePath: string;
   destPath: string;
 }): Promise<void> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const { data: signed, error: signErr } = await supabase.storage
     .from(LONGFORM_BUCKET)
     .createSignedUrl(params.storagePath, 60 * 10);
@@ -189,7 +202,7 @@ export async function downloadLongformSourceToPath(params: {
  * the file mode path didn't need a re-upload.
  */
 export function getLongformPublicUrl(storagePath: string): string {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const { data } = supabase.storage
     .from(LONGFORM_BUCKET)
     .getPublicUrl(storagePath);
@@ -209,7 +222,7 @@ export async function uploadLongformClipBuffer(params: {
   candidateId: string;
   buffer: Buffer;
 }): Promise<LongformUploadResult> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const storagePath = `${params.userId}/longform-clips/${params.candidateId}.mp4`;
 
   const { error } = await supabase.storage
@@ -239,7 +252,7 @@ export async function uploadLongformClipFromPath(params: {
   filePath: string;
   contentType?: string;
 }): Promise<LongformUploadResult> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const storagePath = `${params.userId}/longform-clips/${params.candidateId}.mp4`;
   const contentType = params.contentType ?? "video/mp4";
 
@@ -286,7 +299,7 @@ export async function uploadLongformClipFromPath(params: {
 export async function deleteLongformSource(
   storagePath: string
 ): Promise<void> {
-  const supabase = createSupabaseClient();
+  const supabase = getClient();
   const { error } = await supabase.storage
     .from(LONGFORM_BUCKET)
     .remove([storagePath]);

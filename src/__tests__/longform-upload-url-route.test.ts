@@ -9,7 +9,11 @@ vi.mock("@/lib/auth/get-session", () => ({
 
 const createSignedUploadUrlMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({
-  createSupabaseClient: () => ({
+  // Phase 7 retry 2, CRITICAL-4 — route now uses the service-role
+  // client because the bucket is private and Better Auth is not a
+  // Supabase Auth JWT source. Anon-client `createSupabaseClient` is
+  // no longer imported by this route.
+  getServiceRoleClient: () => ({
     storage: {
       from: () => ({
         createSignedUploadUrl: createSignedUploadUrlMock,

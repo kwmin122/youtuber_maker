@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { createSupabaseClient } from "@/lib/supabase";
+import { getServiceRoleClient } from "@/lib/supabase";
 import { getServerSession } from "@/lib/auth/get-session";
 import {
   LONGFORM_ALLOWED_MIME_TYPES,
@@ -63,9 +63,17 @@ export async function POST(request: NextRequest) {
   const { filename } = parsed.data;
   const safeName = sanitizeFilename(filename);
   const uploadId = randomUUID();
+  // Scope under `<userId>/uploads/<uuid>/<name>` — ties the signed
+  // upload to the caller's user folder so the storage-level RLS
+  // policy (defense-in-depth) and the service-role Drizzle
+  // ownership checks both agree on the tenant boundary.
   const storagePath = `${session.user.id}/uploads/${uploadId}/${safeName}`;
 
-  const supabase = createSupabaseClient();
+  // Use the service-role client because Better Auth sessions are not
+  // Supabase Auth JWTs, so the anon client's `auth.uid()` is NULL
+  // and RLS would deny the insert on the now-private
+  // `longform-sources` bucket. Phase 7 retry 2, Codex CRITICAL-4.
+  const supabase = getServiceRoleClient();
   const { data, error } = await supabase.storage
     .from(LONGFORM_BUCKET)
     .createSignedUploadUrl(storagePath);
