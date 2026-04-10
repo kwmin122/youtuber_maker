@@ -81,6 +81,38 @@ export function getLongformPublicUrl(storagePath: string): string {
 }
 
 /**
+ * Upload a clipped 9:16 MP4 produced by the longform-clip handler
+ * into the v1 `media` bucket under a stable per-user path. Using the
+ * flat path `<userId>/longform-clips/<candidateId>.mp4` avoids the
+ * chicken-and-egg problem of needing a project id before we've
+ * created the child project row. The `media_assets.storagePath` is
+ * persisted in DB so later deletion does not rely on path convention.
+ */
+export async function uploadLongformClipBuffer(params: {
+  userId: string;
+  candidateId: string;
+  buffer: Buffer;
+}): Promise<LongformUploadResult> {
+  const supabase = createSupabaseClient();
+  const storagePath = `${params.userId}/longform-clips/${params.candidateId}.mp4`;
+
+  const { error } = await supabase.storage
+    .from("media")
+    .upload(storagePath, params.buffer, {
+      contentType: "video/mp4",
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`Longform clip upload failed: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from("media").getPublicUrl(storagePath);
+
+  return { storagePath, publicUrl: data.publicUrl };
+}
+
+/**
  * Delete a longform source from storage (cleanup / GDPR).
  */
 export async function deleteLongformSource(
