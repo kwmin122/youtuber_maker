@@ -46,10 +46,27 @@ function createMockDb(opts: {
 } = {}) {
   const selectRows = opts.selectRows ?? [];
 
-  // Awaiting `db.update(...).set(...).where(...)` should resolve.
+  // Awaiting `db.update(...).set(...).where(...).returning(...)` should
+  // resolve. `.returning()` is appended to the builder chain BEFORE
+  // await, so `.where()` must return a builder object, not a Promise.
+  // The builder's `.returning()` then returns the awaitable Promise.
+  //
+  // By default, `.returning()` resolves to `[{ id: "src-1" }]`
+  // (simulating 1 row successfully updated). The CAS guard checks
+  // `transitioned.length === 0`, so a non-empty array passes the guard.
+  const makeUpdateWhereChain = (returningRows: unknown[] = [{ id: "src-1" }]) => ({
+    returning: vi.fn().mockResolvedValue(returningRows),
+    // Plain `await db.update(...).set(...).where(...)` (without
+    // `.returning()`) also needs to be awaitable for non-CAS updates.
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject: (e: unknown) => unknown
+    ) => Promise.resolve(undefined).then(resolve, reject),
+  });
+
   const updateChain = {
     set: vi.fn().mockReturnThis(),
-    where: vi.fn().mockResolvedValue(undefined),
+    where: vi.fn().mockReturnValue(makeUpdateWhereChain()),
   };
 
   const insertChain = {
@@ -214,14 +231,20 @@ describe("handleLongformDownload", () => {
   });
 
   it("aborts when compare-and-set pending->downloading finds no matching row (HIGH-1)", async () => {
-    // Phase 7 retry 2, HIGH-1 — the ready -> downloading (or
-    // pending -> downloading) transition now uses an explicit CAS.
-    // If `rowCount === 0` the handler throws rather than silently
-    // overwriting a later successful state (`ready`).
+    // Phase 7 retry 3, HIGH-1 — the CAS now uses `.returning()` so we
+    // get a type-safe array instead of the postgres-js `.count` vs
+    // `.rowCount` mismatch. An empty array means 0 rows affected.
+    const makeWhereChainReturning = (rows: unknown[]) => ({
+      returning: vi.fn().mockResolvedValue(rows),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject: (e: unknown) => unknown
+      ) => Promise.resolve(undefined).then(resolve, reject),
+    });
     const updateChain = {
       set: vi.fn().mockReturnThis(),
-      // Always report 0 rows affected, simulating a stale retry.
-      where: vi.fn().mockResolvedValue({ rowCount: 0 }),
+      // Return empty array from `.returning()` to simulate 0 rows affected.
+      where: vi.fn().mockReturnValue(makeWhereChainReturning([])),
     };
     const selectChain = {
       from: vi.fn().mockReturnThis(),
@@ -317,10 +340,24 @@ describe("handleLongformDownload", () => {
     // Fail when the call tries to transition to `status='ready'` on
     // the longform source. This is the update that runs *after* the
     // upload has succeeded, so the orphan cleanup path must fire.
+    // Phase 7 retry 3: `.where()` must return a builder object with
+    // `.returning()` for the CAS call (status='downloading'), and
+    // reject directly for status='ready'.
     updateChain.where.mockImplementation(() => {
       const last = setCalls[setCalls.length - 1];
       if (last && last.status === "ready") {
         return Promise.reject(new Error("db transient failure"));
+      }
+      if (last && last.status === "downloading") {
+        // CAS transition — return builder with .returning() that resolves
+        // with one row (simulating a successful status flip).
+        return {
+          returning: vi.fn().mockResolvedValue([{ id: "src-1" }]),
+          then: (
+            resolve: (v: unknown) => unknown,
+            reject: (e: unknown) => unknown
+          ) => Promise.resolve(undefined).then(resolve, reject),
+        };
       }
       return Promise.resolve(undefined);
     });

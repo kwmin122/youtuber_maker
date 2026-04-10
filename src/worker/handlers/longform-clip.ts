@@ -152,6 +152,11 @@ export async function handleLongformClip(
     // Only flip if the row is actually in `ready`|`analyzed`. A race
     // between two concurrent clip jobs on the same source would
     // otherwise overwrite state and double-upload clip outputs.
+    //
+    // Use `.returning()` instead of checking `.rowCount` — postgres-js
+    // exposes `.count` (not `.rowCount`), so the rowCount approach
+    // silently evaluates `undefined === 0` → false and skips the guard
+    // entirely. Phase 7 retry 3, Codex HIGH-1 fix.
     const transitioned = await db
       .update(longformSources)
       .set({ status: "clipping", updatedAt: new Date() })
@@ -160,10 +165,9 @@ export async function handleLongformClip(
           eq(longformSources.id, sourceId),
           inArray(longformSources.status, ["ready", "analyzed"])
         )
-      );
-    const transitionedRowCount =
-      (transitioned as unknown as { rowCount?: number })?.rowCount;
-    if (transitionedRowCount === 0) {
+      )
+      .returning({ id: longformSources.id });
+    if (transitioned.length === 0) {
       throw new Error(
         `longform source ${sourceId} is not ready/analyzed; another clip job may be in flight`
       );
@@ -213,6 +217,36 @@ export async function handleLongformClip(
         await job.updateProgress(progressBase);
       }
 
+      // --- Pre-upload idempotency check (Phase 7 retry 3, HIGH-2A) ---
+      // Check whether a previous attempt already created the child
+      // project for this candidate BEFORE running FFmpeg or uploading.
+      // The storage path is deterministic (`<userId>/longform-clips/
+      // <candidateId>.mp4`) so a successful prior upload produced the
+      // same object — re-uploading with upsert:true is safe, but
+      // skipping the upload entirely avoids the orphan-creation window
+      // that exists between upload and the FOR UPDATE idempotency lock
+      // inside createChildProjectForClip.
+      //
+      // On BullMQ retry: if a previous attempt succeeded the upload but
+      // failed the DB transaction, the child project row does NOT exist
+      // yet (the transaction rolled back), so childProjectId is null and
+      // we fall through to re-upload + re-create. The upsert on the
+      // signed URL overwrites the existing storage object cleanly.
+      const [freshCand] = await db
+        .select()
+        .from(longformCandidates)
+        .where(eq(longformCandidates.id, cand.id));
+
+      if (freshCand?.childProjectId) {
+        // This candidate was already processed (possibly by a prior
+        // run). Recover the project id and skip re-upload + re-create.
+        childProjectIds.push(freshCand.childProjectId);
+        // Clean up the pre-allocated output path (FFmpeg hasn't written
+        // it yet, but attempt removal in case of partial writes).
+        try { await rm(outputPath, { force: true }); } catch { /* best-effort */ }
+        continue;
+      }
+
       await clipLongform9x16({
         inputPath: sourcePath,
         outputPath,
@@ -223,7 +257,10 @@ export async function handleLongformClip(
       // Stream the clip mp4 directly to Supabase Storage without
       // buffering it in RAM — clips are bounded to 60s so the memory
       // win is smaller, but it also means we never have two copies
-      // (disk + buffer) of the file live at once.
+      // (disk + buffer) of the file live at once. The signed URL was
+      // created with upsert:true (Phase 7 retry 3 HIGH-2B fix) so
+      // retries that re-upload to the same path don't get "duplicate"
+      // errors.
       const { storagePath: clipStoragePath, publicUrl: clipPublicUrl } =
         await uploadLongformClipFromPath({
           userId,

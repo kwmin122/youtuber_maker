@@ -108,6 +108,11 @@ export async function handleLongformDownload(
     // in one of those states. Without this, a race between a
     // user-initiated retry and a stale worker job can overwrite a
     // successful `ready` state back to `downloading`.
+    //
+    // Use `.returning()` instead of checking `.rowCount` — postgres-js
+    // exposes `.count` (not `.rowCount`), so the rowCount approach
+    // silently evaluates `undefined === 0` → false and skips the guard
+    // entirely. Phase 7 retry 3, Codex HIGH-1 fix.
     const transitioned = await db
       .update(longformSources)
       .set({ status: "downloading", updatedAt: new Date() })
@@ -116,13 +121,9 @@ export async function handleLongformDownload(
           eq(longformSources.id, sourceId),
           inArray(longformSources.status, ["pending", "failed"])
         )
-      );
-    // Drizzle's update() returns a result with `rowCount` on pg. If
-    // the affected row count is 0, another job/handler already moved
-    // the row past this state — abort to stay idempotent.
-    const rowCount =
-      (transitioned as unknown as { rowCount?: number })?.rowCount;
-    if (rowCount === 0) {
+      )
+      .returning({ id: longformSources.id });
+    if (transitioned.length === 0) {
       throw new Error(
         `longform source ${sourceId} is not in a pending/failed state (current: ${source.status}); skipping download`
       );

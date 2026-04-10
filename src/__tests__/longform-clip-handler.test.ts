@@ -48,19 +48,41 @@ import { rm, mkdtemp } from "fs/promises";
 function createMockDb(options: {
   sourceRow?: Record<string, unknown> | null;
   candidateRows?: Array<Record<string, unknown>>;
+  /**
+   * Per-candidate pre-flight rows for the idempotency check.
+   * Each entry corresponds to the candidate at the same index.
+   * Default: `[{ childProjectId: null }]` for all candidates
+   * (no existing project → proceed with clip + upload).
+   */
+  preflightRows?: Array<Record<string, unknown> | null>;
 }) {
-  const { sourceRow = null, candidateRows = [] } = options;
+  const { sourceRow = null, candidateRows = [], preflightRows } = options;
 
   let selectCallCount = 0;
   const selectChain = {
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockImplementation(() => {
       selectCallCount += 1;
-      // first select() call loads source, second loads candidates
+      // Call 1: load source row
       if (selectCallCount === 1) {
         return Promise.resolve(sourceRow ? [sourceRow] : []);
       }
-      return Promise.resolve(candidateRows);
+      // Call 2: load candidates batch
+      if (selectCallCount === 2) {
+        return Promise.resolve(candidateRows);
+      }
+      // Calls 3+: per-candidate pre-flight idempotency check.
+      // Index into preflightRows using (selectCallCount - 3).
+      const preflightIdx = selectCallCount - 3;
+      const overrides = preflightRows?.[preflightIdx];
+      if (overrides === null) {
+        return Promise.resolve([]);
+      }
+      const baseCand = candidateRows[preflightIdx];
+      const row = baseCand
+        ? { ...baseCand, childProjectId: null, ...(overrides ?? {}) }
+        : null;
+      return Promise.resolve(row ? [row] : []);
     }),
   };
 
@@ -76,6 +98,19 @@ function createMockDb(options: {
   };
 
   const updateSets: Array<Record<string, unknown>> = [];
+  // `.where()` must return a builder object (not a Promise) so that
+  // `.returning()` can be called for the CAS transition. The builder
+  // also implements `.then()` so it is directly `await`-able for
+  // non-CAS update calls. Default `.returning()` resolves to
+  // `[{ id: "source-1" }]` — 1 row updated → CAS passes.
+  // Phase 7 retry 3, Codex HIGH-1 fix.
+  const makeWhereResult = () => ({
+    returning: vi.fn().mockResolvedValue([{ id: "source-1" }]),
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject: (e: unknown) => unknown
+    ) => Promise.resolve(undefined).then(resolve, reject),
+  });
   const updateChain = {
     set: vi.fn().mockImplementation(function (
       this: unknown,
@@ -84,7 +119,7 @@ function createMockDb(options: {
       updateSets.push(v);
       return updateChain;
     }),
-    where: vi.fn().mockResolvedValue(undefined),
+    where: vi.fn().mockReturnValue(makeWhereResult()),
   };
 
   const db = {
@@ -437,5 +472,62 @@ describe("handleLongformClip", () => {
       .map((s) => (s as Record<string, unknown>).status as string);
     expect(statusUpdates).toContain("clipping");
     expect(statusUpdates).toContain("ready");
+  });
+
+  it("skips re-upload and re-create when candidate already has a childProjectId (idempotent retry)", async () => {
+    // Phase 7 retry 3, Codex HIGH-2A — the pre-upload idempotency
+    // check queries the candidate row BEFORE running FFmpeg/upload.
+    // If childProjectId is already set, the candidate was processed
+    // by a prior attempt; we short-circuit to avoid orphaned uploads.
+    const { db } = createMockDb({
+      sourceRow,
+      candidateRows: [makeCandidate("c1", 0, 5000)],
+      // Simulate: pre-flight check finds childProjectId already set.
+      preflightRows: [{ childProjectId: "proj-existing" }],
+    });
+
+    const result = await handleLongformClip(
+      makeJob({ sourceId: "source-1", candidateIds: ["c1"] }),
+      db as never
+    );
+
+    // Should NOT run FFmpeg or upload — candidate already done.
+    expect(clipLongform9x16).not.toHaveBeenCalled();
+    expect(uploadLongformClipFromPath).not.toHaveBeenCalled();
+    expect(createChildProjectForClip).not.toHaveBeenCalled();
+
+    // Should recover the existing project id into the result.
+    expect(result.count).toBe(1);
+    expect(result.childProjectIds).toEqual(["proj-existing"]);
+  });
+
+  it("processes new candidates normally even when a prior candidate is already done", async () => {
+    // Phase 7 retry 3, HIGH-2A — mixed batch: first candidate already
+    // has a childProjectId (skip), second does not (process normally).
+    const { db } = createMockDb({
+      sourceRow,
+      candidateRows: [
+        makeCandidate("c1", 0, 5000),
+        makeCandidate("c2", 10_000, 15_000),
+      ],
+      preflightRows: [
+        { childProjectId: "proj-existing" }, // c1: skip
+        { childProjectId: null },             // c2: process
+      ],
+    });
+
+    const result = await handleLongformClip(
+      makeJob({ sourceId: "source-1", candidateIds: ["c1", "c2"] }),
+      db as never
+    );
+
+    // Only c2 should trigger FFmpeg + upload + child project creation.
+    expect(clipLongform9x16).toHaveBeenCalledTimes(1);
+    expect(uploadLongformClipFromPath).toHaveBeenCalledTimes(1);
+    expect(createChildProjectForClip).toHaveBeenCalledTimes(1);
+
+    expect(result.count).toBe(2);
+    expect(result.childProjectIds[0]).toBe("proj-existing");
+    expect(result.childProjectIds[1]).toBe("proj-c2");
   });
 });

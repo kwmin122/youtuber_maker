@@ -69,12 +69,28 @@ function createMockDb(options: {
     returning: vi.fn().mockResolvedValue([{ id: "new-id" }]),
   };
 
+  // `.where()` must return a builder object (not a Promise) so that
+  // `.returning()` can be called on it for the CAS transition. The
+  // builder also implements `.then()` so it is directly `await`-able
+  // for non-CAS update calls that do not chain `.returning()`.
+  //
+  // Default: `.returning()` resolves to `[{ id: "row-id" }]` — 1 row
+  // updated, so the CAS guard (`transitioned.length === 0`) passes.
+  // Phase 7 retry 3, Codex HIGH-1 fix.
+  const makeWhereResult = () => ({
+    returning: vi.fn().mockResolvedValue([{ id: "row-id" }]),
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject: (e: unknown) => unknown
+    ) => Promise.resolve(undefined).then(resolve, reject),
+  });
+
   const updateChain = {
     set: vi.fn().mockImplementation(function (this: unknown, v: Record<string, unknown>) {
       updateCalls.push({ set: v });
       return updateChain;
     }),
-    where: vi.fn().mockResolvedValue(undefined),
+    where: vi.fn().mockReturnValue(makeWhereResult()),
   };
 
   return {
@@ -366,5 +382,75 @@ describe("handleLongformAnalyze", () => {
     await expect(
       handleLongformAnalyze(job, tracked.db as never)
     ).rejects.toThrow(/AI 분석이 충분한 후보 구간을 찾지 못했습니다/);
+  });
+
+  it("aborts when CAS ready→analyzing finds no matching row (HIGH-1 fix)", async () => {
+    // Phase 7 retry 3, Codex HIGH-1 — the CAS now uses `.returning()`
+    // so the check is driver-portable. An empty array from `.returning()`
+    // means 0 rows affected (e.g. source is already in 'analyzing'
+    // from a concurrent worker). The handler must abort rather than
+    // silently overwriting a later state.
+    const insertCalls: Array<unknown> = [];
+    const updateCalls: Array<{ set: Record<string, unknown> }> = [];
+
+    // Override where to return a builder whose .returning() gives [].
+    const makeEmptyReturning = () => ({
+      returning: vi.fn().mockResolvedValue([]),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject: (e: unknown) => unknown
+      ) => Promise.resolve(undefined).then(resolve, reject),
+    });
+
+    const updateChain = {
+      set: vi.fn().mockImplementation(function (this: unknown, v: Record<string, unknown>) {
+        updateCalls.push({ set: v });
+        return updateChain;
+      }),
+      where: vi.fn().mockReturnValue(makeEmptyReturning()),
+    };
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "s1",
+          userId: "user-1",
+          status: "ready",
+          sourceType: "url",
+          sourceUrl: "https://youtube.com/watch?v=abc",
+          storagePath: null,
+          title: "t",
+          durationSeconds: 600,
+        },
+      ]),
+    };
+    const insertChain = {
+      values: vi.fn().mockImplementation((v: unknown) => {
+        insertCalls.push(v);
+        return Promise.resolve();
+      }),
+      returning: vi.fn().mockResolvedValue([{ id: "new-id" }]),
+    };
+    const db = {
+      select: vi.fn().mockReturnValue(selectChain),
+      insert: vi.fn().mockReturnValue(insertChain),
+      update: vi.fn().mockReturnValue(updateChain),
+      delete: vi.fn(),
+    };
+
+    const job = createMockJob({
+      jobId: "job-1",
+      userId: "user-1",
+      payload: { sourceId: "s1" },
+    });
+
+    // getUserAIClient won't even be reached — the CAS abort fires first.
+    await expect(
+      handleLongformAnalyze(job, db as never)
+    ).rejects.toThrow(/not in 'ready' state/);
+
+    // AI client and audio helpers must not have been called.
+    expect(downloadLongformSourceToPath).not.toHaveBeenCalled();
+    expect(extractAudioForAnalysis).not.toHaveBeenCalled();
   });
 });

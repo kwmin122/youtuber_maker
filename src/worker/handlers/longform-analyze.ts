@@ -95,6 +95,11 @@ export async function handleLongformAnalyze(
 
     // Compare-and-set ready → analyzing (Phase 7 retry 2, HIGH-1).
     // Prevents a stale analyze retry from overwriting a later state.
+    //
+    // Use `.returning()` instead of checking `.rowCount` — postgres-js
+    // exposes `.count` (not `.rowCount`), so the rowCount approach
+    // silently evaluates `undefined === 0` → false and skips the guard
+    // entirely. Phase 7 retry 3, Codex HIGH-1 fix.
     const transitioned = await db
       .update(longformSources)
       .set({ status: "analyzing", updatedAt: new Date() })
@@ -103,10 +108,9 @@ export async function handleLongformAnalyze(
           eq(longformSources.id, sourceId),
           eq(longformSources.status, "ready")
         )
-      );
-    const transitionedRowCount =
-      (transitioned as unknown as { rowCount?: number })?.rowCount;
-    if (transitionedRowCount === 0) {
+      )
+      .returning({ id: longformSources.id });
+    if (transitioned.length === 0) {
       throw new Error(
         `longform source ${sourceId} is not in 'ready' state; skipping analyze`
       );
