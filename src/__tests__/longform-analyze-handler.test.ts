@@ -11,7 +11,7 @@ vi.mock("@/lib/youtube/parse-url", () => ({
   parseVideoUrl: vi.fn(),
 }));
 vi.mock("@/lib/media/longform-storage", () => ({
-  downloadLongformSource: vi.fn(),
+  downloadLongformSourceToPath: vi.fn(),
 }));
 vi.mock("@/lib/video/extract-audio", () => ({
   extractAudioForAnalysis: vi.fn(),
@@ -20,7 +20,6 @@ vi.mock("fs/promises", async () => {
   return {
     mkdtemp: vi.fn().mockResolvedValue("/tmp/longform-analyze-xyz"),
     rm: vi.fn().mockResolvedValue(undefined),
-    writeFile: vi.fn().mockResolvedValue(undefined),
   };
 });
 vi.mock("@/lib/db/schema", () => ({
@@ -34,7 +33,7 @@ import { handleLongformAnalyze } from "@/worker/handlers/longform-analyze";
 import { getUserAIClient } from "@/lib/ai/get-user-ai-client";
 import { fetchTranscript } from "@/lib/youtube/transcript";
 import { parseVideoUrl } from "@/lib/youtube/parse-url";
-import { downloadLongformSource } from "@/lib/media/longform-storage";
+import { downloadLongformSourceToPath } from "@/lib/media/longform-storage";
 import { extractAudioForAnalysis } from "@/lib/video/extract-audio";
 import type { Job } from "bullmq";
 
@@ -165,6 +164,7 @@ describe("handleLongformAnalyze", () => {
     const tracked = createMockDb({
       sourceRow: {
         id: "s1",
+        userId: "user-1",
         status: "pending",
         sourceType: "url",
         sourceUrl: "https://youtube.com/watch?v=abc",
@@ -187,6 +187,7 @@ describe("handleLongformAnalyze", () => {
     const tracked = createMockDb({
       sourceRow: {
         id: "s1",
+        userId: "user-1",
         status: "ready",
         sourceType: "url",
         sourceUrl: "https://youtube.com/watch?v=abcdefghijk",
@@ -222,7 +223,7 @@ describe("handleLongformAnalyze", () => {
     expect(generateTextWithModel).toHaveBeenCalledTimes(1);
     expect(generateJsonFromAudio).not.toHaveBeenCalled();
     // Audio helpers must not be touched
-    expect(downloadLongformSource).not.toHaveBeenCalled();
+    expect(downloadLongformSourceToPath).not.toHaveBeenCalled();
     expect(extractAudioForAnalysis).not.toHaveBeenCalled();
 
     // Candidates were inserted
@@ -249,6 +250,7 @@ describe("handleLongformAnalyze", () => {
     const tracked = createMockDb({
       sourceRow: {
         id: "s1",
+        userId: "user-1",
         status: "ready",
         sourceType: "url",
         sourceUrl: "https://youtube.com/watch?v=abcdefghijk",
@@ -271,14 +273,20 @@ describe("handleLongformAnalyze", () => {
     });
     vi.mocked(parseVideoUrl).mockReturnValue({ videoId: "abcdefghijk" });
     vi.mocked(fetchTranscript).mockResolvedValue(null);
-    vi.mocked(downloadLongformSource).mockResolvedValue(Buffer.from([0x00, 0x01]));
+    vi.mocked(downloadLongformSourceToPath).mockResolvedValue(undefined);
     vi.mocked(extractAudioForAnalysis).mockResolvedValue(undefined);
 
     const result = await handleLongformAnalyze(job, tracked.db as never);
 
     expect(result.mode).toBe("audio");
     expect(result.candidateCount).toBe(2);
-    expect(downloadLongformSource).toHaveBeenCalledWith("user-1/s1/source.mp4");
+    // The source must be streamed to disk, NEVER buffered via
+    // readFile/arrayBuffer first. Phase 7 retry 2 CRITICAL-3.
+    expect(downloadLongformSourceToPath).toHaveBeenCalledTimes(1);
+    expect(downloadLongformSourceToPath).toHaveBeenCalledWith({
+      storagePath: "user-1/s1/source.mp4",
+      destPath: expect.stringContaining("source.mp4"),
+    });
     expect(extractAudioForAnalysis).toHaveBeenCalledTimes(1);
     expect(generateJsonFromAudio).toHaveBeenCalledTimes(1);
     expect(generateTextWithModel).not.toHaveBeenCalled();
@@ -293,6 +301,7 @@ describe("handleLongformAnalyze", () => {
     const tracked = createMockDb({
       sourceRow: {
         id: "s1",
+        userId: "user-1",
         status: "ready",
         sourceType: "file",
         sourceUrl: null,
@@ -312,7 +321,7 @@ describe("handleLongformAnalyze", () => {
       },
       keyId: "k1",
     });
-    vi.mocked(downloadLongformSource).mockResolvedValue(Buffer.from([0x00]));
+    vi.mocked(downloadLongformSourceToPath).mockResolvedValue(undefined);
     vi.mocked(extractAudioForAnalysis).mockResolvedValue(undefined);
 
     const result = await handleLongformAnalyze(job, tracked.db as never);
@@ -331,6 +340,7 @@ describe("handleLongformAnalyze", () => {
     const tracked = createMockDb({
       sourceRow: {
         id: "s1",
+        userId: "user-1",
         status: "ready",
         sourceType: "url",
         sourceUrl: "https://youtube.com/watch?v=abcdefghijk",

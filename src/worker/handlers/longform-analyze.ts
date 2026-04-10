@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 import { eq } from "drizzle-orm";
-import { mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -18,7 +18,7 @@ import {
   buildAudioPrompt,
 } from "@/lib/longform/analyze-prompt";
 import { parseAndValidateCandidates } from "@/lib/longform/segment-validator";
-import { downloadLongformSource } from "@/lib/media/longform-storage";
+import { downloadLongformSourceToPath } from "@/lib/media/longform-storage";
 import { extractAudioForAnalysis } from "@/lib/video/extract-audio";
 
 type DrizzleInstance = {
@@ -196,8 +196,17 @@ export async function handleLongformAnalyze(
           updatedAt: new Date(),
         })
         .where(eq(jobs.id, jobId));
-      const buffer = await downloadLongformSource(source.storagePath);
-      await writeFile(videoPath, buffer);
+      // Stream the source bytes directly to disk. Phase 7 retry 2
+      // Codex CRITICAL-3: the legacy path did
+      //   arrayBuffer() -> Buffer.from() -> writeFile()
+      // which peaks at (file size) of worker RAM and OOMs Railway on
+      // the exact 2 GB case Phase 7 claims to support. The streaming
+      // helper writes via createWriteStream so memory stays bounded
+      // to a single fetch chunk.
+      await downloadLongformSourceToPath({
+        storagePath: source.storagePath,
+        destPath: videoPath,
+      });
 
       await db
         .update(jobs)
