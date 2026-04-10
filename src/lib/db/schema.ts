@@ -279,9 +279,14 @@ export const scripts = pgTable("scripts", {
   projectId: uuid("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
-  analysisId: uuid("analysis_id")
-    .notNull()
-    .references(() => analyses.id, { onDelete: "cascade" }),
+  /**
+   * Nullable for longform-derived scripts (Phase 7), which have no
+   * analysis origin — the script content comes directly from the
+   * long-form transcript segment, not from a channel analysis.
+   */
+  analysisId: uuid("analysis_id").references(() => analyses.id, {
+    onDelete: "cascade",
+  }),
   /** Topic title from topicRecommendations */
   title: text("title").notNull(),
   /** Full script content */

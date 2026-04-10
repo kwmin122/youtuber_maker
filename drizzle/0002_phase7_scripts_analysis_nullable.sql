@@ -1,0 +1,1 @@
+ALTER TABLE "scripts" ALTER COLUMN "analysis_id" DROP NOT NULL;
