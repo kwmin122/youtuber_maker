@@ -50,6 +50,12 @@ export default function DashboardLayout({
           >
             Projects
           </Link>
+          <Link
+            href="/analytics"
+            className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Analytics
+          </Link>
           <div className="pt-4">
             <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Settings

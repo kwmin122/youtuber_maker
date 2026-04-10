@@ -1,7 +1,7 @@
 "use client";
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FileText, Image, Mic, Video } from "lucide-react";
+import { FileText, Image, Mic, Video, Upload } from "lucide-react";
 import { SceneTab } from "./scene-tab";
 
 interface WorkflowTabsProps {
@@ -13,6 +13,7 @@ interface WorkflowTabsProps {
     scene: React.ReactNode;
     voice: React.ReactNode;
     video: React.ReactNode;
+    distribution?: React.ReactNode;
   };
 }
 
@@ -21,6 +22,7 @@ const TABS = [
   { value: "scene", label: "2. 장면/이미지", icon: Image, step: 2 },
   { value: "voice", label: "3. 음성", icon: Mic, step: 3 },
   { value: "video", label: "4. 최종 영상", icon: Video, step: 4 },
+  { value: "distribution", label: "5. 배포", icon: Upload, step: 5 },
 ] as const;
 
 export function WorkflowTabs({
@@ -31,7 +33,7 @@ export function WorkflowTabs({
 }: WorkflowTabsProps) {
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
-      <TabsList className="grid w-full grid-cols-4">
+      <TabsList className="grid w-full grid-cols-5">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isCompleted = completedSteps.includes(tab.step);
@@ -59,6 +61,9 @@ export function WorkflowTabs({
       <TabsContent value="scene">{children.scene}</TabsContent>
       <TabsContent value="voice">{children.voice}</TabsContent>
       <TabsContent value="video">{children.video}</TabsContent>
+      {children.distribution && (
+        <TabsContent value="distribution">{children.distribution}</TabsContent>
+      )}
     </Tabs>
   );
 }
