@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "avatar_presets_provider_id_idx" ON "avatar_presets" USING btree ("provider","provider_avatar_id");

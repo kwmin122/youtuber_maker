@@ -418,7 +418,12 @@ export const avatarPresets = pgTable("avatar_presets", {
   voiceIdHint: text("voice_id_hint"), // nullable provider voice id hint for the TTS step
   source: text("source").notNull().default("library"), // 'library' | 'custom'
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("avatar_presets_provider_id_idx").on(
+    table.provider,
+    table.providerAvatarId
+  ),
+]);
 
 export const avatarAssets = pgTable("avatar_assets", {
   id: uuid("id").defaultRandom().primaryKey(),
