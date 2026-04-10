@@ -24,9 +24,36 @@ export interface ValidatedCandidate {
 const MIN_CLIP_MS = 30_000;
 const MAX_CLIP_MS = 60_000;
 
+/**
+ * Hard lower/upper bounds on how many candidates we accept. Phase 7
+ * retry 2, Codex HIGH-4: the validator used to return whatever count
+ * the model produced (potentially 1 for targetCount: 5) and only the
+ * handler rejected zero. Now the validator itself throws a typed
+ * error when the post-normalization count is out of range, so the
+ * handler can catch it and mark the source as `failed` with a
+ * user-visible Korean message rather than a raw stack trace.
+ */
+export const MIN_CANDIDATE_COUNT = 5;
+export const MAX_CANDIDATE_COUNT = 10;
+
+export class InsufficientCandidatesError extends Error {
+  readonly accepted: number;
+  readonly minimum: number;
+  constructor(accepted: number, minimum: number) {
+    super(
+      `Only ${accepted} valid candidate(s) after normalization; need at least ${minimum}`
+    );
+    this.name = "InsufficientCandidatesError";
+    this.accepted = accepted;
+    this.minimum = minimum;
+  }
+}
+
 export interface ParseOptions {
   targetCount: number;
   sourceDurationSeconds: number;
+  /** Override the hard minimum (defaults to MIN_CANDIDATE_COUNT). */
+  minimumCount?: number;
 }
 
 export function parseAndValidateCandidates(
@@ -64,12 +91,27 @@ export function parseAndValidateCandidates(
     .map((c) => ({ c, total: totalScore(c) }))
     .sort((a, b) => b.total - a.total);
 
-  // Greedy non-overlap: accept highest-scored first
+  // Greedy non-overlap: accept highest-scored first.
+  // Clamp targetCount to [MIN_CANDIDATE_COUNT, MAX_CANDIDATE_COUNT]
+  // so a miscalibrated caller can't bypass the cap.
+  const effectiveTarget = Math.max(
+    MIN_CANDIDATE_COUNT,
+    Math.min(MAX_CANDIDATE_COUNT, options.targetCount)
+  );
   const accepted: ValidatedCandidate[] = [];
   for (const { c } of scored) {
     if (accepted.some((a) => overlaps(a, c))) continue;
     accepted.push(c);
-    if (accepted.length >= options.targetCount) break;
+    if (accepted.length >= effectiveTarget) break;
+  }
+
+  // Enforce the absolute lower bound. Anything below
+  // `minimumCount` (default 5) means the model did not find enough
+  // shippable segments and the job should fail rather than silently
+  // returning a useless result.
+  const minimum = options.minimumCount ?? MIN_CANDIDATE_COUNT;
+  if (accepted.length < minimum) {
+    throw new InsufficientCandidatesError(accepted.length, minimum);
   }
 
   // Return in chronological order for a predictable downstream

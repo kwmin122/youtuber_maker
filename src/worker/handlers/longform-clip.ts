@@ -148,13 +148,26 @@ export async function handleLongformClip(
       durationForEstimate * DISK_BYTES_PER_SECOND * DISK_WORKING_MULTIPLIER;
     await assertDiskSpaceAvailable(estimatedBytes);
 
-    // Flip source row to 'clipping' so the detail UI's progress
-    // banner renders during a long batch clip. Falls back to 'ready'
-    // in both the success and failure paths below.
-    await db
+    // Compare-and-set ready → clipping (Phase 7 retry 2, HIGH-1).
+    // Only flip if the row is actually in `ready`|`analyzed`. A race
+    // between two concurrent clip jobs on the same source would
+    // otherwise overwrite state and double-upload clip outputs.
+    const transitioned = await db
       .update(longformSources)
       .set({ status: "clipping", updatedAt: new Date() })
-      .where(eq(longformSources.id, sourceId));
+      .where(
+        and(
+          eq(longformSources.id, sourceId),
+          inArray(longformSources.status, ["ready", "analyzed"])
+        )
+      );
+    const transitionedRowCount =
+      (transitioned as unknown as { rowCount?: number })?.rowCount;
+    if (transitionedRowCount === 0) {
+      throw new Error(
+        `longform source ${sourceId} is not ready/analyzed; another clip job may be in flight`
+      );
+    }
 
     // --- Download source once ---
     tempDir = await mkdtemp(join(tmpdir(), "longform-clip-"));

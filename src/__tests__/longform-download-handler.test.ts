@@ -213,6 +213,50 @@ describe("handleLongformDownload", () => {
     ).rejects.toThrow(/sourceUrl/);
   });
 
+  it("aborts when compare-and-set pending->downloading finds no matching row (HIGH-1)", async () => {
+    // Phase 7 retry 2, HIGH-1 — the ready -> downloading (or
+    // pending -> downloading) transition now uses an explicit CAS.
+    // If `rowCount === 0` the handler throws rather than silently
+    // overwriting a later successful state (`ready`).
+    const updateChain = {
+      set: vi.fn().mockReturnThis(),
+      // Always report 0 rows affected, simulating a stale retry.
+      where: vi.fn().mockResolvedValue({ rowCount: 0 }),
+    };
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([
+        {
+          id: "src-1",
+          userId: "user-1",
+          sourceType: "url",
+          sourceUrl: "https://www.youtube.com/watch?v=abc",
+          storagePath: null,
+          publicUrl: null,
+          status: "ready", // already past the downloading stage
+          title: null,
+        },
+      ]),
+    };
+    const db = {
+      update: vi.fn().mockReturnValue(updateChain),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockResolvedValue(undefined),
+      }),
+      select: vi.fn().mockReturnValue(selectChain),
+      delete: vi.fn(),
+    };
+
+    await expect(
+      handleLongformDownload(makeJob({ sourceId: "src-1" }), db as never)
+    ).rejects.toThrow(/not in a pending\/failed state/);
+
+    // Must NOT have gone on to probe/download/upload.
+    expect(ytdlp.probeVideoMetadata).not.toHaveBeenCalled();
+    expect(ytdlp.downloadVideo).not.toHaveBeenCalled();
+    expect(longformStorage.uploadLongformSourceFromPath).not.toHaveBeenCalled();
+  });
+
   it("URL mode: streams upload via filePath (no readFile -> Buffer)", async () => {
     // Regression: the old handler did
     // `const buffer = await readFile(finalPath); upload(buffer)`,

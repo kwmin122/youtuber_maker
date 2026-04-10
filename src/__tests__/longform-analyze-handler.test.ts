@@ -89,31 +89,20 @@ function createMockDb(options: {
   };
 }
 
+// 5 non-overlapping candidates so parseAndValidateCandidates'
+// HIGH-4 minimum (5) is satisfied.
 const VALID_GEMINI_RESPONSE = JSON.stringify({
-  candidates: [
-    {
-      startMs: 0,
-      endMs: 45_000,
-      hookScore: 80,
-      emotionalScore: 70,
-      informationDensity: 60,
-      trendScore: 50,
-      reason: "Strong opener",
-      titleSuggestion: "You won't believe it",
-      transcriptSnippet: "Intro segment",
-    },
-    {
-      startMs: 100_000,
-      endMs: 145_000,
-      hookScore: 90,
-      emotionalScore: 85,
-      informationDensity: 75,
-      trendScore: 80,
-      reason: "Surprise twist",
-      titleSuggestion: "Wait... what?",
-      transcriptSnippet: "Mid segment",
-    },
-  ],
+  candidates: Array.from({ length: 5 }, (_, i) => ({
+    startMs: i * 70_000,
+    endMs: i * 70_000 + 45_000,
+    hookScore: 80,
+    emotionalScore: 70,
+    informationDensity: 60,
+    trendScore: 50,
+    reason: `Strong segment ${i}`,
+    titleSuggestion: `Title ${i}`,
+    transcriptSnippet: `Segment ${i} snippet`,
+  })),
 });
 
 describe("handleLongformAnalyze", () => {
@@ -219,7 +208,7 @@ describe("handleLongformAnalyze", () => {
     const result = await handleLongformAnalyze(job, tracked.db as never);
 
     expect(result.mode).toBe("transcript");
-    expect(result.candidateCount).toBe(2);
+    expect(result.candidateCount).toBe(5);
     expect(generateTextWithModel).toHaveBeenCalledTimes(1);
     expect(generateJsonFromAudio).not.toHaveBeenCalled();
     // Audio helpers must not be touched
@@ -228,7 +217,7 @@ describe("handleLongformAnalyze", () => {
 
     // Candidates were inserted
     const candidateInsert = tracked.insertCalls.find(
-      (call) => Array.isArray(call.values) && (call.values as unknown[]).length === 2
+      (call) => Array.isArray(call.values) && (call.values as unknown[]).length === 5
     );
     expect(candidateInsert).toBeDefined();
 
@@ -279,7 +268,7 @@ describe("handleLongformAnalyze", () => {
     const result = await handleLongformAnalyze(job, tracked.db as never);
 
     expect(result.mode).toBe("audio");
-    expect(result.candidateCount).toBe(2);
+    expect(result.candidateCount).toBe(5);
     // The source must be streamed to disk, NEVER buffered via
     // readFile/arrayBuffer first. Phase 7 retry 2 CRITICAL-3.
     expect(downloadLongformSourceToPath).toHaveBeenCalledTimes(1);
@@ -369,8 +358,13 @@ describe("handleLongformAnalyze", () => {
       source: "youtube-transcript",
     });
 
+    // Phase 7 retry 2, HIGH-4 — the handler now translates the
+    // validator's InsufficientCandidatesError into a user-facing
+    // Korean message before rethrowing, so empty/insufficient
+    // responses surface a clear "try another video" string on the
+    // source row's errorMessage.
     await expect(
       handleLongformAnalyze(job, tracked.db as never)
-    ).rejects.toThrow(/zero valid candidates/);
+    ).rejects.toThrow(/AI 분석이 충분한 후보 구간을 찾지 못했습니다/);
   });
 });

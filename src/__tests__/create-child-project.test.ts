@@ -52,15 +52,32 @@ interface UpdateCall {
  * factory: tx.insert(table).values(v).returning() and
  * tx.update(table).set(v).where(w).
  *
- * Returns the tx plus arrays recording every call for assertions.
+ * `selectResults` lets a caller preload rows returned by
+ * `tx.select().from(table).where(...).for('update')` / `.limit(1)`
+ * for each table — used by the idempotency path in HIGH-2.
  */
-function makeTx() {
+function makeTx(
+  selectResults: Map<unknown, Array<Record<string, unknown>>> = new Map()
+) {
   const insertCalls: InsertCall[] = [];
   const updateCalls: UpdateCall[] = [];
 
   let insertCount = 0;
 
   const tx = {
+    select: (_cols?: unknown) => ({
+      from: (table: unknown) => {
+        const rows = selectResults.get(table) ?? [];
+        const terminal = {
+          where: (_w: unknown) => ({
+            for: async (_lockMode: string) => rows,
+            limit: async (_n: number) => rows,
+            then: (resolve: (v: unknown) => unknown) => resolve(rows),
+          }),
+        };
+        return terminal;
+      },
+    }),
     insert: (table: unknown) => ({
       values: (values: Values) => {
         insertCalls.push({ table, values });
@@ -246,6 +263,39 @@ describe("createChildProjectForClip", () => {
     await expect(createChildProjectForClip(params)).rejects.toThrow(
       /Invalid candidate duration/
     );
+  });
+
+  it("is idempotent on retry: returns the existing child project when candidate.childProjectId is already set (HIGH-2)", async () => {
+    // Phase 7 retry 2, HIGH-2 — BullMQ retries rerun the full clip
+    // loop. If candidate A succeeded on attempt 1 and candidate B
+    // failed, the retry would otherwise create a SECOND child
+    // project for A and orphan the first. The factory now checks
+    // for an existing `childProjectId` under a row-level lock and
+    // returns the existing project shape instead of inserting.
+    const existingCandidate = {
+      id: "cand-1",
+      childProjectId: "existing-proj-1",
+    };
+    const existingScript = { id: "existing-script-1" };
+    const existingScene = { id: "existing-scene-1" };
+    const selectResults = new Map<unknown, Array<Record<string, unknown>>>();
+    selectResults.set(schema.longformCandidates, [existingCandidate]);
+    selectResults.set(schema.scripts, [existingScript]);
+    selectResults.set(schema.scenes, [existingScene]);
+
+    const { tx, insertCalls, updateCalls } = makeTx(selectResults);
+    mockedDb.transaction.mockImplementation(async (cb) => cb(tx as never));
+
+    const result = await createChildProjectForClip(baseParams());
+
+    // Should be a no-op: no new inserts, no candidate update.
+    expect(insertCalls).toHaveLength(0);
+    expect(updateCalls).toHaveLength(0);
+    expect(result).toEqual({
+      projectId: "existing-proj-1",
+      scriptId: "existing-script-1",
+      sceneId: "existing-scene-1",
+    });
   });
 
   it("falls back to source.title when titleSuggestion is missing", async () => {

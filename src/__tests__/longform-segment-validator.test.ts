@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { parseAndValidateCandidates } from "@/lib/longform/segment-validator";
+import {
+  parseAndValidateCandidates,
+  InsufficientCandidatesError,
+} from "@/lib/longform/segment-validator";
+
+// These existing tests intentionally produce fewer than
+// MIN_CANDIDATE_COUNT (5) candidates to exercise individual
+// normalization rules. Pass `minimumCount: 0` so the HIGH-4 floor
+// doesn't interfere with the behavior under test. The new tests at
+// the bottom of this file exercise the floor itself.
+const LEGACY_OPTS = { minimumCount: 0 } as const;
 
 function makeCandidate(overrides: Record<string, unknown> = {}) {
   return {
@@ -26,6 +36,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(1);
     expect(result[0].startMs).toBe(0);
@@ -38,6 +49,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(1);
   });
@@ -54,6 +66,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result[0].hookScore).toBe(100);
     expect(result[0].emotionalScore).toBe(0);
@@ -68,6 +81,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 20, // source is only 20s, can't extend
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(0);
   });
@@ -79,6 +93,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(1);
     expect(result[0].endMs - result[0].startMs).toBe(30_000);
@@ -91,6 +106,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(1);
     expect(result[0].endMs - result[0].startMs).toBe(60_000);
@@ -126,6 +142,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result).toHaveLength(2);
     // The surviving overlap candidate should be the stronger one
@@ -133,7 +150,11 @@ describe("parseAndValidateCandidates", () => {
     expect(survivors).toEqual([30_000, 100_000]);
   });
 
-  it("truncates to targetCount", () => {
+  it("clamps targetCount below MIN_CANDIDATE_COUNT up to the floor (HIGH-4)", () => {
+    // Phase 7 retry 2 — the validator now clamps
+    // targetCount into [MIN_CANDIDATE_COUNT, MAX_CANDIDATE_COUNT].
+    // A caller asking for 3 is silently upgraded to 5 so the
+    // downstream UI always has at least the documented lower bound.
     const raw = wrap(
       Array.from({ length: 10 }, (_, i) =>
         makeCandidate({
@@ -146,7 +167,23 @@ describe("parseAndValidateCandidates", () => {
       targetCount: 3,
       sourceDurationSeconds: 1000,
     });
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(5);
+  });
+
+  it("caps targetCount above MAX_CANDIDATE_COUNT at 10 (HIGH-4)", () => {
+    const raw = wrap(
+      Array.from({ length: 20 }, (_, i) =>
+        makeCandidate({
+          startMs: i * 70_000,
+          endMs: i * 70_000 + 45_000,
+        })
+      )
+    );
+    const result = parseAndValidateCandidates(raw, {
+      targetCount: 25,
+      sourceDurationSeconds: 2000,
+    });
+    expect(result).toHaveLength(10);
   });
 
   it("returns results sorted chronologically", () => {
@@ -158,6 +195,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result.map((r) => r.startMs)).toEqual([0, 150_000, 300_000]);
   });
@@ -176,6 +214,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result[0].reason).toBe("");
     expect(result[0].titleSuggestion).toBe("");
@@ -188,6 +227,7 @@ describe("parseAndValidateCandidates", () => {
     const result = parseAndValidateCandidates(raw, {
       targetCount: 5,
       sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
     });
     expect(result[0].reason.length).toBe(1000);
   });
@@ -197,6 +237,7 @@ describe("parseAndValidateCandidates", () => {
       parseAndValidateCandidates("not json", {
         targetCount: 5,
         sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
       })
     ).toThrow(/Gemini JSON parse failed/);
   });
@@ -206,7 +247,34 @@ describe("parseAndValidateCandidates", () => {
       parseAndValidateCandidates(JSON.stringify({ foo: "bar" }), {
         targetCount: 5,
         sourceDurationSeconds: 600,
+      ...LEGACY_OPTS,
       })
     ).toThrow(/missing 'candidates'/);
+  });
+
+  it("throws InsufficientCandidatesError when the model produces fewer than the minimum (HIGH-4)", () => {
+    // Phase 7 retry 2 — the validator used to happily return 1
+    // candidate for targetCount: 5. Now it throws a typed error so
+    // the handler can surface a clear user message.
+    const raw = wrap([
+      makeCandidate({ startMs: 0, endMs: 45_000 }),
+      makeCandidate({ startMs: 60_000, endMs: 105_000 }),
+    ]);
+    expect(() =>
+      parseAndValidateCandidates(raw, {
+        targetCount: 5,
+        sourceDurationSeconds: 600,
+      })
+    ).toThrow(InsufficientCandidatesError);
+  });
+
+  it("allows tests to bypass the minimum via minimumCount: 0 (HIGH-4 escape hatch)", () => {
+    const raw = wrap([makeCandidate({ startMs: 0, endMs: 45_000 })]);
+    const result = parseAndValidateCandidates(raw, {
+      targetCount: 5,
+      sourceDurationSeconds: 600,
+      minimumCount: 0,
+    });
+    expect(result).toHaveLength(1);
   });
 });

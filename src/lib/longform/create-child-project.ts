@@ -64,6 +64,52 @@ export async function createChildProjectForClip(
   const wordCount = snippet.split(/\s+/).filter(Boolean).length;
 
   return await dbInstance.transaction(async (tx) => {
+    // Idempotency guard — Phase 7 retry 2, HIGH-2.
+    //
+    // BullMQ retries make the clip handler rerun the full candidate
+    // loop. Without this check, a retry after a mid-batch failure
+    // would create a SECOND child project for candidates that
+    // already succeeded, and orphan the original project row (the
+    // candidate's `childProjectId` would be overwritten with the new
+    // project id and the old project would become unreachable).
+    //
+    // If the candidate already has a `childProjectId`, look up the
+    // existing project and return the same result shape instead of
+    // inserting new rows. The clip upload itself is idempotent by
+    // candidateId (same storage path), so re-running the upload is a
+    // no-op overwrite.
+    const [existingCandidate] = await tx
+      .select()
+      .from(longformCandidates)
+      .where(eq(longformCandidates.id, candidate.id))
+      .for("update");
+
+    if (existingCandidate?.childProjectId) {
+      const [existingScript] = await tx
+        .select()
+        .from(scripts)
+        .where(eq(scripts.projectId, existingCandidate.childProjectId))
+        .limit(1);
+      if (existingScript) {
+        const [existingScene] = await tx
+          .select()
+          .from(scenes)
+          .where(eq(scenes.scriptId, existingScript.id))
+          .limit(1);
+        if (existingScene) {
+          return {
+            projectId: existingCandidate.childProjectId,
+            scriptId: existingScript.id,
+            sceneId: existingScene.id,
+          };
+        }
+      }
+      // Fallthrough: candidate points at a project row that no
+      // longer has script/scene rows. Treat as corrupt and
+      // re-create. This can happen if the child project was
+      // partially deleted out-of-band.
+    }
+
     const [project] = await tx
       .insert(projects)
       .values({

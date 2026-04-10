@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -103,10 +103,30 @@ export async function handleLongformDownload(
       );
     }
 
-    await db
+    // Compare-and-set status transition — Phase 7 retry 2, Codex HIGH-1.
+    // Only flip `pending|failed` → `downloading` if the row is actually
+    // in one of those states. Without this, a race between a
+    // user-initiated retry and a stale worker job can overwrite a
+    // successful `ready` state back to `downloading`.
+    const transitioned = await db
       .update(longformSources)
       .set({ status: "downloading", updatedAt: new Date() })
-      .where(eq(longformSources.id, sourceId));
+      .where(
+        and(
+          eq(longformSources.id, sourceId),
+          inArray(longformSources.status, ["pending", "failed"])
+        )
+      );
+    // Drizzle's update() returns a result with `rowCount` on pg. If
+    // the affected row count is 0, another job/handler already moved
+    // the row past this state — abort to stay idempotent.
+    const rowCount =
+      (transitioned as unknown as { rowCount?: number })?.rowCount;
+    if (rowCount === 0) {
+      throw new Error(
+        `longform source ${sourceId} is not in a pending/failed state (current: ${source.status}); skipping download`
+      );
+    }
 
     tempDir = await mkdtemp(join(tmpdir(), "longform-dl-"));
     const finalPath = join(tempDir, "source.mp4");

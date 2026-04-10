@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -17,7 +17,10 @@ import {
   buildTranscriptPrompt,
   buildAudioPrompt,
 } from "@/lib/longform/analyze-prompt";
-import { parseAndValidateCandidates } from "@/lib/longform/segment-validator";
+import {
+  parseAndValidateCandidates,
+  InsufficientCandidatesError,
+} from "@/lib/longform/segment-validator";
 import { downloadLongformSourceToPath } from "@/lib/media/longform-storage";
 import { extractAudioForAnalysis } from "@/lib/video/extract-audio";
 
@@ -90,10 +93,24 @@ export async function handleLongformAnalyze(
       throw new Error(`source not ready: status=${source.status}`);
     }
 
-    await db
+    // Compare-and-set ready → analyzing (Phase 7 retry 2, HIGH-1).
+    // Prevents a stale analyze retry from overwriting a later state.
+    const transitioned = await db
       .update(longformSources)
       .set({ status: "analyzing", updatedAt: new Date() })
-      .where(eq(longformSources.id, sourceId));
+      .where(
+        and(
+          eq(longformSources.id, sourceId),
+          eq(longformSources.status, "ready")
+        )
+      );
+    const transitionedRowCount =
+      (transitioned as unknown as { rowCount?: number })?.rowCount;
+    if (transitionedRowCount === 0) {
+      throw new Error(
+        `longform source ${sourceId} is not in 'ready' state; skipping analyze`
+      );
+    }
 
     const { provider } = await getUserAIClient(userId, "gemini");
     if (provider.name !== "gemini") {
@@ -252,10 +269,24 @@ export async function handleLongformAnalyze(
       })
       .where(eq(jobs.id, jobId));
 
-    const candidates = parseAndValidateCandidates(rawJson, {
-      targetCount,
-      sourceDurationSeconds: source.durationSeconds ?? 0,
-    });
+    let candidates;
+    try {
+      candidates = parseAndValidateCandidates(rawJson, {
+        targetCount,
+        sourceDurationSeconds: source.durationSeconds ?? 0,
+      });
+    } catch (err) {
+      // Phase 7 retry 2, HIGH-4 — translate the validator's typed
+      // error into a user-visible Korean message. The catch block
+      // below will set `longform_sources.status='failed'` with this
+      // message so the UI shows a clear explanation.
+      if (err instanceof InsufficientCandidatesError) {
+        throw new Error(
+          "AI 분석이 충분한 후보 구간을 찾지 못했습니다. 다른 영상을 시도해주세요."
+        );
+      }
+      throw err;
+    }
     if (candidates.length === 0) {
       throw new Error("Gemini returned zero valid candidates");
     }
