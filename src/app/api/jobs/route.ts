@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { jobs } from "@/lib/db/schema";
 import { getQueue } from "@/lib/queue";
+import { getLongformQueue } from "@/lib/queue-longform";
 import { getServerSession } from "@/lib/auth/get-session";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -20,6 +21,9 @@ const ALLOWED_JOB_TYPES = [
   "generate-seo",
   "generate-thumbnail",
   "fetch-metrics",
+  "longform-download",
+  "longform-analyze",
+  "longform-clip",
 ] as const;
 
 const submitJobSchema = z.object({
@@ -64,7 +68,10 @@ export async function POST(request: NextRequest) {
     .returning();
 
   // Enqueue to BullMQ — jobId/userId AFTER spread to prevent client override
-  await getQueue().add(type, {
+  const targetQueue = type.startsWith("longform-")
+    ? getLongformQueue()
+    : getQueue();
+  await targetQueue.add(type, {
     payload: payload || {},
     jobId: created.id,
     userId: session.user.id,
