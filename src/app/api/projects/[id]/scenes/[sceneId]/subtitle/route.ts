@@ -31,6 +31,7 @@ async function verifySceneOwnership(sceneId: string, userId: string) {
     .limit(1);
 
   if (!scene) return null;
+  if (!scene.scriptId) return null;
 
   const [script] = await db
     .select()

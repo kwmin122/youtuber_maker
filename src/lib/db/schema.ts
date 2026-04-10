@@ -43,6 +43,32 @@ export const apiKeys = pgTable("api_keys", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// ---------- Phase 7 Tables (declared before `projects` for FK resolution) ----------
+
+export const longformSources = pgTable("longform_sources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull(), // 'url' | 'file'
+  sourceUrl: text("source_url"),              // set when sourceType='url'
+  storagePath: text("storage_path"),          // set after download/upload completes
+  publicUrl: text("public_url"),              // Supabase Storage public URL after download
+  title: text("title"),
+  durationSeconds: integer("duration_seconds"), // extracted after download
+  status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|failed
+  errorMessage: text("error_message"),
+  transcript: jsonb("transcript").$type<{
+    segments: Array<{ text: string; offset: number; duration: number }>;
+    fullText: string;
+    language: string;
+    source: "youtube-transcript" | "gemini-audio";
+  } | null>(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id")
@@ -50,6 +76,10 @@ export const projects = pgTable("projects", {
     .references(() => user.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
+  parentLongformId: uuid("parent_longform_id").references(
+    () => longformSources.id,
+    { onDelete: "set null" }
+  ),
   workflowState: jsonb("workflow_state").$type<{
     currentStep: number;
     lastActiveTab: string;
@@ -61,6 +91,28 @@ export const projects = pgTable("projects", {
   exportedAt: timestamp("exported_at"), // when last export completed
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const longformCandidates = pgTable("longform_candidates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceId: uuid("source_id")
+    .notNull()
+    .references(() => longformSources.id, { onDelete: "cascade" }),
+  startMs: integer("start_ms").notNull(),
+  endMs: integer("end_ms").notNull(),
+  hookScore: integer("hook_score").notNull(),           // 0-100
+  emotionalScore: integer("emotional_score").notNull(), // 0-100
+  informationDensity: integer("information_density").notNull(), // 0-100
+  trendScore: integer("trend_score").notNull(),         // 0-100
+  reason: text("reason").notNull(),
+  titleSuggestion: text("title_suggestion"),
+  transcriptSnippet: text("transcript_snippet"),
+  selected: boolean("selected").notNull().default(false),
+  childProjectId: uuid("child_project_id").references(
+    () => projects.id,
+    { onDelete: "set null" }
+  ),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const jobs = pgTable("jobs", {
@@ -255,9 +307,16 @@ export const scripts = pgTable("scripts", {
 
 export const scenes = pgTable("scenes", {
   id: uuid("id").defaultRandom().primaryKey(),
-  scriptId: uuid("script_id")
-    .notNull()
-    .references(() => scripts.id, { onDelete: "cascade" }),
+  scriptId: uuid("script_id").references(() => scripts.id, {
+    onDelete: "cascade",
+  }),
+  sourceType: text("source_type").notNull().default("manual"), // 'manual' | 'longform-clip'
+  sourceClipStartMs: integer("source_clip_start_ms"),
+  sourceClipEndMs: integer("source_clip_end_ms"),
+  sourceLongformId: uuid("source_longform_id").references(
+    () => longformSources.id,
+    { onDelete: "set null" }
+  ),
   sceneIndex: integer("scene_index").notNull(), // 0-based order within script
   narration: text("narration").notNull(), // TTS input text
   imagePrompt: text("image_prompt").notNull(), // prompt for image generation
