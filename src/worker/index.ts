@@ -19,10 +19,28 @@ worker.on("ready", () =>
   console.log("[Worker] Ready and listening for jobs")
 );
 
+const longformWorker = new Worker("longform-queue", processJob, {
+  connection,
+  concurrency: 2, // longform jobs are heavy; keep parallelism low
+  removeOnComplete: { count: 50 },
+  removeOnFail: { count: 200 },
+});
+
+longformWorker.on("completed", (job) =>
+  console.log(`[LongformWorker] Job ${job.id} completed`)
+);
+longformWorker.on("failed", (job, err) =>
+  console.error(`[LongformWorker] Job ${job?.id} failed:`, err)
+);
+longformWorker.on("ready", () =>
+  console.log("[LongformWorker] Ready and listening for longform jobs")
+);
+
 process.on("SIGTERM", async () => {
   console.log("[Worker] Shutting down...");
-  await worker.close();
+  await Promise.all([worker.close(), longformWorker.close()]);
   process.exit(0);
 });
 
 console.log("[Worker] Starting main-queue worker...");
+console.log("[Worker] Starting longform-queue worker...");
