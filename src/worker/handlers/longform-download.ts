@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 import { eq } from "drizzle-orm";
-import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
@@ -10,9 +10,10 @@ import {
   assertDurationInBounds,
 } from "@/lib/video/longform-constants";
 import {
-  uploadLongformSource,
-  downloadLongformSource,
+  uploadLongformSourceFromPath,
+  downloadLongformSourceToPath,
   getLongformPublicUrl,
+  deleteLongformSource,
 } from "@/lib/media/longform-storage";
 
 type DrizzleInstance = {
@@ -65,6 +66,10 @@ export async function handleLongformDownload(
   const { sourceId } = payload;
 
   let tempDir: string | null = null;
+  // Track the storage path we just uploaded so the catch block can
+  // delete it if a later DB update fails. Prevents orphan objects in
+  // the longform-sources bucket when a worker crashes mid-job.
+  let uploadedPath: string | null = null;
   try {
     await db
       .update(jobs)
@@ -166,14 +171,17 @@ export async function handleLongformDownload(
         })
         .where(eq(jobs.id, jobId));
 
-      const buffer = await readFile(finalPath);
-      const uploaded = await uploadLongformSource({
+      // Stream the downloaded file straight into Supabase Storage
+      // without ever materializing its bytes in RAM. Fixes the
+      // Railway worker OOM on 2 GB sources.
+      const uploaded = await uploadLongformSourceFromPath({
         userId,
         sourceId,
-        buffer,
+        filePath: finalPath,
       });
       storagePath = uploaded.storagePath;
       publicUrl = uploaded.publicUrl;
+      uploadedPath = storagePath;
     } else if (source.sourceType === "file") {
       if (!source.storagePath) {
         throw new Error("file source missing storagePath");
@@ -188,8 +196,12 @@ export async function handleLongformDownload(
         })
         .where(eq(jobs.id, jobId));
 
-      const buffer = await downloadLongformSource(source.storagePath);
-      await writeFile(finalPath, buffer);
+      // Stream the file directly into tempDir so we can ffprobe it
+      // without copying the bytes through a Buffer.
+      await downloadLongformSourceToPath({
+        storagePath: source.storagePath,
+        destPath: finalPath,
+      });
 
       await db
         .update(jobs)
@@ -232,6 +244,10 @@ export async function handleLongformDownload(
       })
       .where(eq(longformSources.id, sourceId));
 
+    // Row now owns the storage object — clear the orphan-cleanup
+    // tracker so a later failure doesn't delete a live reference.
+    uploadedPath = null;
+
     await db
       .update(jobs)
       .set({
@@ -253,6 +269,17 @@ export async function handleLongformDownload(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
+
+    // Best-effort orphan storage cleanup: if we uploaded to storage
+    // but the run failed before the `longform_sources` row reached
+    // `ready`, delete the dangling object so we do not leak bytes.
+    if (uploadedPath) {
+      try {
+        await deleteLongformSource(uploadedPath);
+      } catch {
+        /* swallow: cleanup is best-effort */
+      }
+    }
 
     try {
       await db

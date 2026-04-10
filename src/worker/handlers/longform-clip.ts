@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 import { eq, inArray, and } from "drizzle-orm";
-import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -10,8 +10,8 @@ import {
   longformCandidates,
 } from "@/lib/db/schema";
 import {
-  downloadLongformSource,
-  uploadLongformClipBuffer,
+  downloadLongformSourceToPath,
+  uploadLongformClipFromPath,
 } from "@/lib/media/longform-storage";
 import { clipLongform9x16 } from "@/lib/video/clip-longform";
 import { assertDiskSpaceAvailable } from "@/lib/video/disk-preflight";
@@ -148,6 +148,14 @@ export async function handleLongformClip(
       durationForEstimate * DISK_BYTES_PER_SECOND * DISK_WORKING_MULTIPLIER;
     await assertDiskSpaceAvailable(estimatedBytes);
 
+    // Flip source row to 'clipping' so the detail UI's progress
+    // banner renders during a long batch clip. Falls back to 'ready'
+    // in both the success and failure paths below.
+    await db
+      .update(longformSources)
+      .set({ status: "clipping", updatedAt: new Date() })
+      .where(eq(longformSources.id, sourceId));
+
     // --- Download source once ---
     tempDir = await mkdtemp(join(tmpdir(), "longform-clip-"));
     const sourcePath = join(tempDir, "source.mp4");
@@ -164,8 +172,12 @@ export async function handleLongformClip(
       await job.updateProgress(5);
     }
 
-    const sourceBuffer = await downloadLongformSource(source.storagePath);
-    await writeFile(sourcePath, sourceBuffer);
+    // Stream the source bytes to disk without ever holding them in
+    // RAM. Prevents Railway worker OOM on 2 GB longform inputs.
+    await downloadLongformSourceToPath({
+      storagePath: source.storagePath,
+      destPath: sourcePath,
+    });
 
     // --- Clip loop ---
     const childProjectIds: string[] = [];
@@ -195,13 +207,15 @@ export async function handleLongformClip(
         endMs: cand.endMs,
       });
 
-      const clipBuffer = await readFile(outputPath);
-
+      // Stream the clip mp4 directly to Supabase Storage without
+      // buffering it in RAM — clips are bounded to 60s so the memory
+      // win is smaller, but it also means we never have two copies
+      // (disk + buffer) of the file live at once.
       const { storagePath: clipStoragePath, publicUrl: clipPublicUrl } =
-        await uploadLongformClipBuffer({
+        await uploadLongformClipFromPath({
           userId,
           candidateId: cand.id,
-          buffer: clipBuffer,
+          filePath: outputPath,
         });
 
       const { projectId } = await createChildProjectForClip({
@@ -233,6 +247,13 @@ export async function handleLongformClip(
     }
 
     // --- Success ---
+    // Flip source back to 'ready' so the UI leaves the clipping
+    // progress state and the candidate grid is interactive again.
+    await db
+      .update(longformSources)
+      .set({ status: "ready", updatedAt: new Date() })
+      .where(eq(longformSources.id, sourceId));
+
     await db
       .update(jobs)
       .set({
@@ -261,6 +282,12 @@ export async function handleLongformClip(
     const errorMessage =
       error instanceof Error ? error.message : String(error);
     try {
+      // Release the source back to 'ready' on failure so the user
+      // can retry. (We never leave it stuck in 'clipping'.)
+      await db
+        .update(longformSources)
+        .set({ status: "ready", updatedAt: new Date() })
+        .where(eq(longformSources.id, sourceId));
       await db
         .update(jobs)
         .set({

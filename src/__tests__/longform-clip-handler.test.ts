@@ -11,10 +11,8 @@ vi.mock("@/lib/video/disk-preflight", () => ({
 }));
 
 vi.mock("@/lib/media/longform-storage", () => ({
-  downloadLongformSource: vi
-    .fn()
-    .mockResolvedValue(Buffer.from("fake source bytes")),
-  uploadLongformClipBuffer: vi.fn(),
+  downloadLongformSourceToPath: vi.fn().mockResolvedValue(undefined),
+  uploadLongformClipFromPath: vi.fn(),
 }));
 
 vi.mock("@/lib/longform/create-child-project", () => ({
@@ -32,8 +30,6 @@ vi.mock("fs/promises", async () => {
   return {
     mkdtemp: vi.fn().mockResolvedValue("/tmp/longform-clip-xyz"),
     rm: vi.fn().mockResolvedValue(undefined),
-    writeFile: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockResolvedValue(Buffer.from("fake clip bytes")),
   };
 });
 
@@ -42,8 +38,8 @@ import { handleLongformClip } from "@/worker/handlers/longform-clip";
 import { clipLongform9x16 } from "@/lib/video/clip-longform";
 import { assertDiskSpaceAvailable } from "@/lib/video/disk-preflight";
 import {
-  downloadLongformSource,
-  uploadLongformClipBuffer,
+  downloadLongformSourceToPath,
+  uploadLongformClipFromPath,
 } from "@/lib/media/longform-storage";
 import { createChildProjectForClip } from "@/lib/longform/create-child-project";
 import { rm, mkdtemp } from "fs/promises";
@@ -134,7 +130,7 @@ const makeCandidate = (id: string, startMs: number, endMs: number) => ({
 describe("handleLongformClip", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(uploadLongformClipBuffer).mockResolvedValue({
+    vi.mocked(uploadLongformClipFromPath).mockResolvedValue({
       storagePath: "user-1/longform-clips/cand.mp4",
       publicUrl: "https://cdn/clip.mp4",
     });
@@ -229,15 +225,17 @@ describe("handleLongformClip", () => {
       db as never
     );
 
-    // Source downloaded exactly once.
-    expect(downloadLongformSource).toHaveBeenCalledTimes(1);
-    expect(downloadLongformSource).toHaveBeenCalledWith(
-      "user-1/source-1/source.mp4"
+    // Source downloaded exactly once (streamed to disk).
+    expect(downloadLongformSourceToPath).toHaveBeenCalledTimes(1);
+    expect(downloadLongformSourceToPath).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storagePath: "user-1/source-1/source.mp4",
+      })
     );
     // FFmpeg invoked once per candidate.
     expect(clipLongform9x16).toHaveBeenCalledTimes(3);
     // Upload + child project called once per candidate.
-    expect(uploadLongformClipBuffer).toHaveBeenCalledTimes(3);
+    expect(uploadLongformClipFromPath).toHaveBeenCalledTimes(3);
     expect(createChildProjectForClip).toHaveBeenCalledTimes(3);
     // Result shape.
     expect(result.count).toBe(3);
@@ -261,7 +259,7 @@ describe("handleLongformClip", () => {
     expect(assertDiskSpaceAvailable).toHaveBeenCalled();
     const preflightOrder = vi.mocked(assertDiskSpaceAvailable).mock
       .invocationCallOrder[0];
-    const downloadOrder = vi.mocked(downloadLongformSource).mock
+    const downloadOrder = vi.mocked(downloadLongformSourceToPath).mock
       .invocationCallOrder[0];
     expect(preflightOrder).toBeLessThan(downloadOrder);
   });
@@ -365,5 +363,79 @@ describe("handleLongformClip", () => {
     );
     const mkdtempCall = vi.mocked(mkdtemp).mock.calls[0];
     expect(mkdtempCall[0]).toMatch(/longform-clip-/);
+  });
+
+  it("streams the clip upload from a file path (no readFile -> Buffer path)", async () => {
+    // Regression: the previous implementation did
+    // `readFile(outputPath)` then `uploadLongformClipBuffer(buffer)`,
+    // which OOMed Railway workers on large clip batches because
+    // every clip materialized its entire mp4 in RAM before upload.
+    //
+    // The streaming helper takes a filePath instead, so the test
+    // asserts:
+    //   (a) `uploadLongformClipFromPath` was called with a filePath
+    //       (not a buffer), and
+    //   (b) the handler never touches `fs/promises.readFile` on a
+    //       clip output. We intentionally omit `readFile` from the
+    //       `fs/promises` mock — if the handler ever re-adds it, the
+    //       test file will throw a TypeError at runtime.
+    const { db } = createMockDb({
+      sourceRow,
+      candidateRows: [makeCandidate("c1", 0, 5000)],
+    });
+    await handleLongformClip(
+      makeJob({ sourceId: "source-1", candidateIds: ["c1"] }),
+      db as never
+    );
+    expect(uploadLongformClipFromPath).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        candidateId: "c1",
+        filePath: expect.stringMatching(/clip-c1\.mp4$/),
+      })
+    );
+  });
+
+  it("flips longformSources.status to 'clipping' on start and back to 'ready' on success", async () => {
+    const { db, updateSets } = createMockDb({
+      sourceRow,
+      candidateRows: [makeCandidate("c1", 0, 5000)],
+    });
+    await handleLongformClip(
+      makeJob({ sourceId: "source-1", candidateIds: ["c1"] }),
+      db as never
+    );
+    // Extract the source.status transitions in order.
+    const statusTransitions = updateSets
+      .filter((s) => typeof (s as Record<string, unknown>).status === "string")
+      .map((s) => (s as Record<string, unknown>).status as string);
+    // Order of status updates on longform sources: clipping -> ready
+    // (the 'failed' path is exercised in another test).
+    expect(statusTransitions).toContain("clipping");
+    expect(statusTransitions).toContain("ready");
+    const clippingIdx = statusTransitions.indexOf("clipping");
+    const readyIdx = statusTransitions.indexOf("ready");
+    expect(clippingIdx).toBeLessThan(readyIdx);
+  });
+
+  it("releases longformSources.status back to 'ready' on failure (never stuck in 'clipping')", async () => {
+    vi.mocked(clipLongform9x16).mockRejectedValueOnce(
+      new Error("ffmpeg exploded")
+    );
+    const { db, updateSets } = createMockDb({
+      sourceRow,
+      candidateRows: [makeCandidate("c1", 0, 5000)],
+    });
+    await expect(
+      handleLongformClip(
+        makeJob({ sourceId: "source-1", candidateIds: ["c1"] }),
+        db as never
+      )
+    ).rejects.toThrow(/ffmpeg exploded/);
+    const statusUpdates = updateSets
+      .filter((s) => typeof (s as Record<string, unknown>).status === "string")
+      .map((s) => (s as Record<string, unknown>).status as string);
+    expect(statusUpdates).toContain("clipping");
+    expect(statusUpdates).toContain("ready");
   });
 });
