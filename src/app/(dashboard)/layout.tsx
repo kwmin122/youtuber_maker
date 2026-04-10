@@ -51,6 +51,12 @@ export default function DashboardLayout({
             Projects
           </Link>
           <Link
+            href="/longform"
+            className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Longform
+          </Link>
+          <Link
             href="/analytics"
             className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
           >
