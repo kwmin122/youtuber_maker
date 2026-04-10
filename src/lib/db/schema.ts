@@ -329,3 +329,60 @@ export const audioTracks = pgTable("audio_tracks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ---------- Phase 6 Tables ----------
+
+export const uploads = pgTable("uploads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  platform: text("platform").notNull().default("youtube"), // 'youtube' | 'tiktok' | 'reels'
+  youtubeVideoId: text("youtube_video_id"), // YouTube's video ID after upload
+  videoUrl: text("video_url"), // full URL to the uploaded video
+  title: text("title").notNull(),
+  description: text("description"),
+  tags: jsonb("tags").$type<string[]>(),
+  thumbnailUrl: text("thumbnail_url"), // selected thumbnail URL
+  privacyStatus: text("privacy_status").notNull().default("private"), // 'private' | 'unlisted' | 'public'
+  publishAt: timestamp("publish_at"), // scheduled publish time (null = immediate)
+  uploadedAt: timestamp("uploaded_at"), // when the upload completed
+  status: text("status").notNull().default("pending"), // 'pending' | 'uploading' | 'processing' | 'completed' | 'failed' | 'scheduled'
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const uploadMetrics = pgTable("upload_metrics", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  uploadId: uuid("upload_id")
+    .notNull()
+    .references(() => uploads.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(), // the date of this metrics snapshot
+  viewCount: bigint("view_count", { mode: "number" }).default(0),
+  likeCount: bigint("like_count", { mode: "number" }).default(0),
+  commentCount: bigint("comment_count", { mode: "number" }).default(0),
+  subscriberDelta: integer("subscriber_delta").default(0), // change in subs attributed to this video
+  watchTimeMinutes: real("watch_time_minutes").default(0),
+  impressions: bigint("impressions", { mode: "number" }).default(0),
+  ctr: real("ctr").default(0), // click-through rate percentage
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("upload_metrics_upload_date_idx").on(table.uploadId, table.date),
+]);
+
+export const thumbnails = pgTable("thumbnails", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  url: text("url").notNull(), // Supabase Storage public URL
+  storagePath: text("storage_path").notNull(), // for deletion
+  variant: text("variant").notNull(), // 'A' | 'B' | 'C'
+  prompt: text("prompt").notNull(), // the prompt used to generate this thumbnail
+  isSelected: boolean("is_selected").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
