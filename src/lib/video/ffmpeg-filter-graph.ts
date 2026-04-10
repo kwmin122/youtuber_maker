@@ -2,6 +2,7 @@ import type {
   SceneFilterConfig,
   SubtitleStyle,
   ExportRequest,
+  AvatarLayout,
 } from "./types";
 
 /**
@@ -58,23 +59,34 @@ export function buildSceneFilters(
  * Build transition filters between consecutive scenes.
  * Uses xfade for transitions, concat for cut-only.
  * Output label: [vout].
+ *
+ * @param labelOverrides - Optional map from scene index to the label
+ *   that should be consumed instead of the default `v${i}`. Used by
+ *   Phase 8 avatar overlay: scenes with an avatar get their base label
+ *   replaced by the overlay output (e.g. `v0o`). Defaults to `{}` so
+ *   all existing callers continue to work without changes.
  */
-export function buildTransitionFilters(scenes: SceneFilterConfig[]): string {
+export function buildTransitionFilters(
+  scenes: SceneFilterConfig[],
+  labelOverrides: Record<number, string> = {}
+): string {
+  const label = (i: number) => `[${labelOverrides[i] ?? `v${i}`}]`;
+
   if (scenes.length === 0) return "";
-  if (scenes.length === 1) return `[v0]copy[vout]`;
+  if (scenes.length === 1) return `${label(0)}copy[vout]`;
 
   // Check if ALL transitions are "cut"
   const allCuts = scenes.every((s) => s.transitionType === "cut");
 
   if (allCuts) {
     // Simple concat for all-cut scenarios
-    const labels = scenes.map((_, i) => `[v${i}]`).join("");
+    const labels = scenes.map((_, i) => label(i)).join("");
     return `${labels}concat=n=${scenes.length}:v=1:a=0[vout]`;
   }
 
   // Build xfade chain for transitions
   const filters: string[] = [];
-  let currentLabel = "[v0]";
+  let currentLabel = label(0);
   let cumulativeOffset = scenes[0].duration;
 
   for (let i = 1; i < scenes.length; i++) {
@@ -84,7 +96,7 @@ export function buildTransitionFilters(scenes: SceneFilterConfig[]): string {
     if (scene.transitionType === "cut") {
       // Concat this pair
       filters.push(
-        `${currentLabel}[v${i}]concat=n=2:v=1:a=0${outputLabel}`
+        `${currentLabel}${label(i)}concat=n=2:v=1:a=0${outputLabel}`
       );
     } else {
       // Map transition types to FFmpeg xfade names
@@ -92,7 +104,7 @@ export function buildTransitionFilters(scenes: SceneFilterConfig[]): string {
       const offset = cumulativeOffset - scene.transitionDuration;
 
       filters.push(
-        `${currentLabel}[v${i}]xfade=transition=${xfadeName}:duration=${scene.transitionDuration}:offset=${offset}${outputLabel}`
+        `${currentLabel}${label(i)}xfade=transition=${xfadeName}:duration=${scene.transitionDuration}:offset=${offset}${outputLabel}`
       );
     }
 
@@ -107,6 +119,80 @@ export function buildTransitionFilters(scenes: SceneFilterConfig[]): string {
   }
 
   return filters.join(";");
+}
+
+// ─── Phase 8: Avatar overlay helpers ────────────────────────────────────────
+
+export type AvatarOverlaySpec = {
+  /** The FFmpeg input index of this avatar video file. */
+  inputIndex: number;
+  /** The scene index in the export timeline (0-based). Must match the `[vN]` label produced by buildSceneFilters. */
+  sceneIndex: number;
+  layout: AvatarLayout;
+};
+
+/**
+ * Build per-scene overlay filters that composite an avatar lipsync
+ * video on top of the base scene video. Inputs:
+ *   - the base scene labels `[v0]`, `[v1]`, ... produced by
+ *     `buildSceneFilters`
+ *   - the avatar input files appended at the end of the ffmpeg input list
+ *
+ * Outputs: renamed scene labels `[v0o]`, `[v1o]`, ... (only for
+ * scenes whose layout.enabled is true). Scenes without an avatar
+ * retain their original `[vN]` label. The caller (buildFullFilterGraph)
+ * must then pass the labelOverrides map into buildTransitionFilters.
+ *
+ * Phase 8 D-08.
+ */
+export function buildAvatarOverlayFilters(
+  specs: AvatarOverlaySpec[],
+  outputWidth: number,
+  outputHeight: number
+): { filters: string; labelOverrides: Record<number, string> } {
+  const out: string[] = [];
+  const labelOverrides: Record<number, string> = {};
+
+  for (const spec of specs) {
+    if (!spec.layout.enabled) continue;
+    const avLabel = `[av${spec.sceneIndex}]`;
+    const outLabel = `[v${spec.sceneIndex}o]`;
+
+    if (spec.layout.position === "fullscreen") {
+      // Scale avatar to fill full output dimensions, then overlay at origin
+      out.push(
+        `[${spec.inputIndex}:v]scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=cover,crop=${outputWidth}:${outputHeight}${avLabel}`
+      );
+      out.push(`[v${spec.sceneIndex}]${avLabel}overlay=0:0${outLabel}`);
+    } else {
+      const scale = Math.max(0.1, Math.min(1, spec.layout.scale));
+      out.push(`[${spec.inputIndex}:v]scale=iw*${scale}:-1${avLabel}`);
+
+      const pad = Math.max(0, spec.layout.paddingPx);
+      let xy: string;
+      switch (spec.layout.position) {
+        case "bottom-right":
+          xy = `W-w-${pad}:H-h-${pad}`;
+          break;
+        case "bottom-left":
+          xy = `${pad}:H-h-${pad}`;
+          break;
+        case "top-right":
+          xy = `W-w-${pad}:${pad}`;
+          break;
+        case "center":
+          xy = `(W-w)/2:(H-h)/2`;
+          break;
+        default:
+          xy = `W-w-${pad}:H-h-${pad}`;
+      }
+      out.push(`[v${spec.sceneIndex}]${avLabel}overlay=${xy}${outLabel}`);
+    }
+
+    labelOverrides[spec.sceneIndex] = `v${spec.sceneIndex}o`;
+  }
+
+  return { filters: out.join(";"), labelOverrides };
 }
 
 /**
@@ -250,7 +336,7 @@ export function buildFullFilterGraph(request: ExportRequest): {
 } {
   const { scenes, audioTracks, outputWidth, outputHeight } = request;
 
-  // Build scene filter configs
+  // Build scene filter configs (carry avatar fields through for overlay step)
   const sceneConfigs: SceneFilterConfig[] = scenes.map((scene, i) => ({
     inputIndex: i,
     duration: scene.duration,
@@ -259,6 +345,8 @@ export function buildFullFilterGraph(request: ExportRequest): {
     subtitleStyle: scene.subtitleStyle ?? undefined,
     transitionType: scene.transitionType,
     transitionDuration: scene.transitionDuration,
+    avatarVideoUrl: scene.avatarVideoUrl,
+    avatarLayout: scene.avatarLayout,
   }));
 
   const filterParts: string[] = [];
@@ -267,8 +355,30 @@ export function buildFullFilterGraph(request: ExportRequest): {
   const sceneFilters = buildSceneFilters(sceneConfigs, outputWidth, outputHeight);
   if (sceneFilters) filterParts.push(sceneFilters);
 
-  // 2. Transition filters
-  const transitionFilters = buildTransitionFilters(sceneConfigs);
+  // 1.5 — Avatar overlay filters (Phase 8, D-08)
+  // Avatar video files live AFTER scenes + narrations + BGMs in the ffmpeg
+  // input list: [scenes...][narrations...][bgms...][avatars...]
+  // We compute the avatar base index here and pass correct input offsets.
+  const narrCountForAvatar = scenes.filter((s) => s.audioUrl).length;
+  const avatarScenes = sceneConfigs
+    .map((s, idx) => ({ scene: s, idx }))
+    .filter(({ scene }) => scene.avatarVideoUrl && scene.avatarLayout?.enabled);
+  const avatarBaseIndex = scenes.length + narrCountForAvatar + audioTracks.length;
+  const avatarSpecs: AvatarOverlaySpec[] = avatarScenes.map(({ scene, idx }, i) => ({
+    inputIndex: avatarBaseIndex + i,
+    sceneIndex: idx,
+    layout: scene.avatarLayout!,
+  }));
+  const { filters: avatarFilters, labelOverrides } = buildAvatarOverlayFilters(
+    avatarSpecs,
+    outputWidth,
+    outputHeight
+  );
+  if (avatarFilters) filterParts.push(avatarFilters);
+
+  // 2. Transition filters — pass labelOverrides so avatar-overlaid scenes
+  // use their [vNo] labels instead of the raw [vN] labels.
+  const transitionFilters = buildTransitionFilters(sceneConfigs, labelOverrides);
   if (transitionFilters) filterParts.push(transitionFilters);
 
   // 3. Audio mix filter

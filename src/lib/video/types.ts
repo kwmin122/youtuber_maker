@@ -47,6 +47,17 @@ export const TRANSITION_TYPES: TransitionType[] = [
 /** Audio track type */
 export type AudioTrackType = "bgm" | "sfx";
 
+/** Avatar layout position options */
+export type AvatarPosition = "bottom-right" | "bottom-left" | "top-right" | "center" | "fullscreen";
+
+/** Avatar layout config persisted as JSONB on scenes.avatarLayout (Phase 8) */
+export interface AvatarLayout {
+  enabled: boolean;
+  position: AvatarPosition;
+  scale: number;       // 0.1–1.0, fraction of output width
+  paddingPx: number;   // padding from the edge in pixels
+}
+
 /** Scene data for export pipeline */
 export interface ExportScene {
   sceneIndex: number;
@@ -58,6 +69,9 @@ export interface ExportScene {
   subtitleStyle: SubtitleStyle | null;
   transitionType: TransitionType;
   transitionDuration: number; // seconds
+  /** Phase 8: optional avatar lipsync video overlay */
+  avatarVideoUrl?: string;
+  avatarLayout?: AvatarLayout | null;
 }
 
 /** Audio track data for export pipeline */
@@ -97,6 +111,9 @@ export interface SceneFilterConfig {
   subtitleStyle?: SubtitleStyle;
   transitionType: TransitionType;
   transitionDuration: number;
+  /** Phase 8: optional avatar lipsync video overlay */
+  avatarVideoUrl?: string;
+  avatarLayout?: AvatarLayout | null;
 }
 
 /** Royalty-free audio library entry */

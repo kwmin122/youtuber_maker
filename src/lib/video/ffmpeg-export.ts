@@ -114,6 +114,21 @@ export async function exportVideo(
       });
     }
 
+    // Phase 8: Download avatar lipsync videos.
+    // Input ordering contract: [scenes][narrations][bgms][avatars]
+    // This MUST match the avatarBaseIndex computed in buildFullFilterGraph.
+    const avatarFiles: string[] = [];
+    const avatarScenes = request.scenes.filter(
+      (s) => s.avatarVideoUrl && s.avatarLayout?.enabled
+    );
+    for (let i = 0; i < avatarScenes.length; i++) {
+      const scene = avatarScenes[i];
+      const filePath = join(tempDir, `avatar-${i}.mp4`);
+      const buffer = await downloadFromUrl(scene.avatarVideoUrl!);
+      await writeFile(filePath, buffer);
+      avatarFiles.push(filePath);
+    }
+
     // --- Phase 2: Build FFmpeg command and render ---
     onProgress({
       phase: "rendering",
@@ -152,6 +167,12 @@ export async function exportVideo(
 
     // Input files: BGM/SFX
     for (const file of bgmFiles) {
+      args.push("-i", file);
+    }
+
+    // Input files: avatar lipsync videos (Phase 8)
+    // MUST come after BGMs to match the [scenes][narrations][bgms][avatars] contract
+    for (const file of avatarFiles) {
       args.push("-i", file);
     }
 
