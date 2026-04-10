@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SceneCard } from "./scene-card";
+import { AvatarSubTab } from "./avatar-sub-tab";
 import { Wand2, Loader2 } from "lucide-react";
 
 interface Scene {
@@ -12,6 +14,16 @@ interface Scene {
   imagePrompt: string;
   videoPrompt: string;
   duration: number | null;
+  sourceType?: "manual" | "longform-clip";
+  avatarPresetId?: string | null;
+  avatarLayout?: {
+    enabled: boolean;
+    position: "bottom-right" | "bottom-left" | "center" | "top-right" | "fullscreen";
+    scale: number;
+    paddingPx: number;
+  } | null;
+  avatarVideoUrl?: string | null;
+  avatarProviderTaskId?: string | null;
 }
 
 interface MediaAsset {
@@ -155,7 +167,19 @@ export function SceneTab({ projectId }: SceneTabProps) {
     );
   }
 
-  return (
+  const scenesForAvatar = scenes.map((s) => ({
+    id: s.id,
+    sceneIndex: s.sceneIndex,
+    duration: s.duration,
+    narration: s.narration,
+    sourceType: (s.sourceType ?? "manual") as "manual" | "longform-clip",
+    avatarPresetId: s.avatarPresetId ?? null,
+    avatarLayout: s.avatarLayout ?? null,
+    avatarVideoUrl: s.avatarVideoUrl ?? null,
+    avatarProviderTaskId: s.avatarProviderTaskId ?? null,
+  }));
+
+  const sceneList = (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">
@@ -189,5 +213,29 @@ export function SceneTab({ projectId }: SceneTabProps) {
         ))}
       </div>
     </div>
+  );
+
+  return (
+    <Tabs defaultValue="image" className="w-full">
+      <TabsList className="grid w-full grid-cols-4">
+        <TabsTrigger value="image">이미지</TabsTrigger>
+        <TabsTrigger value="video">영상</TabsTrigger>
+        <TabsTrigger value="audio">오디오</TabsTrigger>
+        <TabsTrigger value="avatar">아바타</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="image">
+        {sceneList}
+      </TabsContent>
+      <TabsContent value="video">
+        {sceneList}
+      </TabsContent>
+      <TabsContent value="audio">
+        {sceneList}
+      </TabsContent>
+      <TabsContent value="avatar">
+        <AvatarSubTab projectId={projectId} scenes={scenesForAvatar} />
+      </TabsContent>
+    </Tabs>
   );
 }
