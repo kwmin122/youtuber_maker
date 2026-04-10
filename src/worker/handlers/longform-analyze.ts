@@ -78,6 +78,14 @@ export async function handleLongformAnalyze(
       .from(longformSources)
       .where(eq(longformSources.id, sourceId));
     if (!source) throw new Error(`longform_source ${sourceId} not found`);
+    // Defense in depth — the /api/jobs route already rejects cross-user
+    // longform enqueues, but the handler must also refuse to act on a
+    // source it does not own. Phase 7 retry 2, Codex CRITICAL-2.
+    if (source.userId !== userId) {
+      throw new Error(
+        `longform source ${sourceId} does not belong to user ${userId}`
+      );
+    }
     if (source.status !== "ready") {
       throw new Error(`source not ready: status=${source.status}`);
     }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { jobs } from "@/lib/db/schema";
+import { jobs, longformSources } from "@/lib/db/schema";
 import { getQueue } from "@/lib/queue";
 import { getLongformQueue } from "@/lib/queue-longform";
 import { getServerSession } from "@/lib/auth/get-session";
@@ -53,6 +53,39 @@ export async function POST(request: NextRequest) {
   }
 
   const { type, projectId, payload } = parsed.data;
+
+  // IDOR defense — longform-* jobs take a `sourceId` in the payload
+  // and the worker handlers mutate that row. Without this check, any
+  // authenticated user could enqueue `longform-download` or
+  // `longform-analyze` or `longform-clip` against another user's
+  // source by guessing (or scraping) its UUID. Phase 7 retry 2,
+  // Codex CRITICAL-2.
+  if (type.startsWith("longform-")) {
+    const rawSourceId = payload?.sourceId;
+    if (typeof rawSourceId !== "string" || rawSourceId.length === 0) {
+      return NextResponse.json(
+        { error: "longform-* jobs require payload.sourceId" },
+        { status: 400 }
+      );
+    }
+    const [sourceRow] = await db
+      .select({ userId: longformSources.userId })
+      .from(longformSources)
+      .where(eq(longformSources.id, rawSourceId))
+      .limit(1);
+    if (!sourceRow) {
+      return NextResponse.json(
+        { error: "source not found" },
+        { status: 404 }
+      );
+    }
+    if (sourceRow.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: "forbidden" },
+        { status: 403 }
+      );
+    }
+  }
 
   // Insert job row with status pending
   const [created] = await db
