@@ -18,7 +18,7 @@ import {
   buildAudioPrompt,
 } from "@/lib/longform/analyze-prompt";
 import { parseAndValidateCandidates } from "@/lib/longform/segment-validator";
-import { downloadLongformSource } from "@/lib/video/longform-storage";
+import { downloadLongformSource } from "@/lib/media/longform-storage";
 import { extractAudioForAnalysis } from "@/lib/video/extract-audio";
 
 type DrizzleInstance = {

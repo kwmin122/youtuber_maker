@@ -10,7 +10,7 @@ vi.mock("@/lib/youtube/transcript", () => ({
 vi.mock("@/lib/youtube/parse-url", () => ({
   parseVideoUrl: vi.fn(),
 }));
-vi.mock("@/lib/video/longform-storage", () => ({
+vi.mock("@/lib/media/longform-storage", () => ({
   downloadLongformSource: vi.fn(),
 }));
 vi.mock("@/lib/video/extract-audio", () => ({
@@ -34,7 +34,7 @@ import { handleLongformAnalyze } from "@/worker/handlers/longform-analyze";
 import { getUserAIClient } from "@/lib/ai/get-user-ai-client";
 import { fetchTranscript } from "@/lib/youtube/transcript";
 import { parseVideoUrl } from "@/lib/youtube/parse-url";
-import { downloadLongformSource } from "@/lib/video/longform-storage";
+import { downloadLongformSource } from "@/lib/media/longform-storage";
 import { extractAudioForAnalysis } from "@/lib/video/extract-audio";
 import type { Job } from "bullmq";
 
