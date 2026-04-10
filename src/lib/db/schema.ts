@@ -56,7 +56,15 @@ export const longformSources = pgTable("longform_sources", {
   publicUrl: text("public_url"),              // Supabase Storage public URL after download
   title: text("title"),
   durationSeconds: integer("duration_seconds"), // extracted after download
-  status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|failed
+  // Source lifecycle: pending -> downloading -> ready -> analyzing
+  // -> ready (candidates present) -> clipping -> ready. The
+  // `longform-analyze` handler rewinds the row to `ready` after
+  // inserting candidates rather than introducing a separate
+  // `analyzed` status — the distinction "has candidates" is encoded
+  // by the presence of rows in `longform_candidates`. A legacy
+  // `analyzed` value is still tolerated by the UI hook + clip handler
+  // for forward compatibility, but no code path ever writes it.
+  status: text("status").notNull().default("pending"), // pending|downloading|analyzing|ready|clipping|failed
   errorMessage: text("error_message"),
   transcript: jsonb("transcript").$type<{
     segments: Array<{ text: string; offset: number; duration: number }>;

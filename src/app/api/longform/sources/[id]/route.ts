@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, asc, desc, sql } from "drizzle-orm";
+import { and, eq, asc, desc, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   longformSources,
@@ -12,16 +12,21 @@ import { getServerSession } from "@/lib/auth/get-session";
  * GET /api/longform/sources/[id]
  *
  * Returns a single longform source (owned by the current user) along
- * with its candidate clips (Plan 07-03) and the most recent
- * `longform-download` job for UI polling.
+ * with its candidate clips and the most recent longform-* job for UI
+ * polling.
  *
- * Response shape:
- *   {
- *     source: LongformSourceRow,
- *     candidates: LongformCandidateRow[],
- *     latestJob: { id, type, status, progress, currentStep, errorMessage, updatedAt } | null
- *   }
+ * The job lookup returns the newest job of ANY longform type
+ * (`longform-download`, `longform-analyze`, `longform-clip`) whose
+ * payload references this source. This way the progress banner shows
+ * the correct phase (downloading, analyzing, or clipping) as the
+ * source moves through the pipeline, instead of being stuck on the
+ * first download job's "download complete" state.
  */
+const LONGFORM_JOB_TYPES = [
+  "longform-download",
+  "longform-analyze",
+  "longform-clip",
+] as const;
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -53,7 +58,7 @@ export async function GET(
     .where(eq(longformCandidates.sourceId, id))
     .orderBy(asc(longformCandidates.startMs));
 
-  // Latest longform-download job whose payload references this source.
+  // Newest longform-* job whose payload.sourceId matches this source.
   // Uses a JSONB operator because `jobs.payload` is a jsonb column.
   const [latestJob] = await db
     .select({
@@ -70,7 +75,7 @@ export async function GET(
     .where(
       and(
         eq(jobs.userId, session.user.id),
-        eq(jobs.type, "longform-download"),
+        inArray(jobs.type, LONGFORM_JOB_TYPES as unknown as string[]),
         sql`${jobs.payload}->>'sourceId' = ${id}`
       )
     )
