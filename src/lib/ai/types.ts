@@ -9,6 +9,21 @@ export interface AIProvider {
    * For structured output, parse the response with JSON.parse().
    */
   generateText(prompt: string, options?: GenerateOptions): Promise<string>;
+  /**
+   * Gemini-only: upload an audio file via the Files API and run a
+   * multimodal prompt that returns JSON. For OpenAI this throws
+   * "not supported". Used by Phase 7 longform analysis when YouTube
+   * captions are unavailable.
+   */
+  generateJsonFromAudio?(params: GenerateJsonFromAudioParams): Promise<string>;
+  /**
+   * Gemini-only: generateText with an override model (e.g. gemini-2.5-pro
+   * for longform analysis while keeping gemini-2.0-flash elsewhere).
+   */
+  generateTextWithModel?(
+    prompt: string,
+    options: GenerateOptions & { model: string }
+  ): Promise<string>;
 }
 
 export interface GenerateOptions {
@@ -20,6 +35,21 @@ export interface GenerateOptions {
   systemInstruction?: string;
   /** If true, instruct model to return valid JSON */
   jsonMode?: boolean;
+}
+
+export interface GenerateJsonFromAudioParams {
+  /** Absolute path to a local audio file (typically mp3/m4a) */
+  audioPath: string;
+  /** MIME type, e.g. 'audio/mpeg' */
+  mimeType: string;
+  /** User prompt (system instruction is provided separately) */
+  prompt: string;
+  /** Optional system instruction */
+  systemInstruction?: string;
+  /** Override model (default 'gemini-2.5-pro') */
+  model?: string;
+  /** Optional temperature (default 0.3 for structured analysis) */
+  temperature?: number;
 }
 
 // ---------- Benchmarking Analysis Types ----------
