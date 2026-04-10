@@ -9,6 +9,10 @@ import { handleGenerateImage } from "./handlers/generate-image";
 import { handleGenerateVideo } from "./handlers/generate-video";
 import { handleGenerateTTS } from "./handlers/generate-tts";
 import { handleExportVideo } from "./handlers/export-video";
+import { handleUploadYouTube } from "./handlers/upload-youtube";
+import { handleGenerateSEO } from "./handlers/generate-seo";
+import { handleGenerateThumbnail } from "./handlers/generate-thumbnail";
+import { handleFetchMetrics } from "./handlers/fetch-metrics";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -30,6 +34,14 @@ export async function processJob(job: Job) {
       return handleGenerateTTS(job, db);
     case "export-video":
       return handleExportVideo(job, db);
+    case "upload-youtube":
+      return handleUploadYouTube(job, db);
+    case "generate-seo":
+      return handleGenerateSEO(job, db);
+    case "generate-thumbnail":
+      return handleGenerateThumbnail(job, db);
+    case "fetch-metrics":
+      return handleFetchMetrics(job, db);
     default:
       throw new Error(`Unknown job type: ${job.name}`);
   }
