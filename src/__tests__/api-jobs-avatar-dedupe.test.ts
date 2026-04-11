@@ -31,6 +31,8 @@ vi.mock("@/lib/db/schema", () => ({
 const ownerRowRef = vi.hoisted(() => ({ value: null as { userId: string } | null }));
 // Controls whether the dedupe query finds an existing job
 const existingJobRef = vi.hoisted(() => ({ value: null as { id: string } | null }));
+// Controls whether INSERT should throw a 23505 unique_violation (race simulation)
+const insertThrowRef = vi.hoisted(() => ({ value: null as Error | null }));
 
 vi.mock("@/lib/db", () => {
   let fromSentinel = "";
@@ -62,7 +64,14 @@ vi.mock("@/lib/db", () => {
   });
   chain.insert = vi.fn(() => chain);
   chain.values = vi.fn(() => chain);
-  chain.returning = vi.fn(async () => [{ id: "new-job-id" }]);
+  chain.returning = vi.fn(async () => {
+    if (insertThrowRef.value) {
+      const err = insertThrowRef.value;
+      insertThrowRef.value = null; // reset after first throw
+      throw err;
+    }
+    return [{ id: "new-job-id" }];
+  });
   return { db: chain };
 });
 
@@ -104,6 +113,7 @@ describe("POST /api/jobs — scene-level duplicate-enqueue protection (Codex Ret
     vi.clearAllMocks();
     ownerRowRef.value = null;
     existingJobRef.value = null;
+    insertThrowRef.value = null;
     // Default: caller owns the scene
     getServerSessionMock.mockResolvedValue({ user: { id: "owner" } });
     ownerRowRef.value = { userId: "owner" };
@@ -174,5 +184,76 @@ describe("POST /api/jobs — scene-level duplicate-enqueue protection (Codex Ret
 
     expect(res.status).toBe(201);
     expect(addMock).toHaveBeenCalledOnce();
+  });
+
+  it("Case 5 — concurrent POST race: INSERT throws 23505 on jobs_avatar_dedupe_uniq → 409 without existingJobId", async () => {
+    // Simulate the TOCTOU race: SELECT pre-check passes (no existing job found),
+    // but the INSERT fails because a concurrent request already won the constraint.
+    existingJobRef.value = null;
+
+    // Craft a postgres-js-shaped 23505 error for the race-loser INSERT
+    const uniqueViolationError = Object.assign(new Error("duplicate key value"), {
+      code: "23505",
+      constraint_name: "jobs_avatar_dedupe_uniq",
+    });
+    insertThrowRef.value = uniqueViolationError;
+
+    const res = await POST(
+      mockRequest({
+        type: "generate-avatar-lipsync",
+        payload: { sceneId: SCENE_ID, avatarPresetId: "preset-1" },
+      })
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("already_enqueued");
+    // Race-loser path has no existingJobId (we didn't do a SELECT to find it)
+    expect(body.existingJobId).toBeUndefined();
+    // BullMQ must NOT be called — the INSERT never committed
+    expect(addMock).not.toHaveBeenCalled();
+  });
+
+  it("Case 6 — INSERT throws non-23505 error → propagates (does not swallow DB errors)", async () => {
+    existingJobRef.value = null;
+
+    // Simulate a generic DB connection error — must NOT be caught as 409
+    const connError = Object.assign(new Error("connection refused"), {
+      code: "08006",
+    });
+    insertThrowRef.value = connError;
+
+    await expect(
+      POST(
+        mockRequest({
+          type: "generate-avatar-lipsync",
+          payload: { sceneId: SCENE_ID, avatarPresetId: "preset-1" },
+        })
+      )
+    ).rejects.toThrow("connection refused");
+
+    expect(addMock).not.toHaveBeenCalled();
+  });
+
+  it("Case 7 — 23505 on a DIFFERENT constraint → propagates (constraint-scoped catch)", async () => {
+    existingJobRef.value = null;
+
+    // A 23505 on a different constraint (e.g. FK) must NOT be swallowed
+    const otherConstraintError = Object.assign(new Error("duplicate key value"), {
+      code: "23505",
+      constraint_name: "some_other_unique_idx",
+    });
+    insertThrowRef.value = otherConstraintError;
+
+    await expect(
+      POST(
+        mockRequest({
+          type: "generate-avatar-lipsync",
+          payload: { sceneId: SCENE_ID, avatarPresetId: "preset-1" },
+        })
+      )
+    ).rejects.toThrow("duplicate key value");
+
+    expect(addMock).not.toHaveBeenCalled();
   });
 });

@@ -122,15 +122,15 @@ export async function POST(request: NextRequest) {
 
     // Scene-level duplicate-enqueue protection (Codex Retry-2 NEW-HIGH finding):
     // If a pending/active generate-avatar-lipsync job already exists for this
-    // scene+user combination, reject the duplicate. This is the authoritative
-    // server-side guard — the client-side guard in avatar-sub-tab.tsx and
-    // avatar-scene-list.tsx is UX sugar only.
+    // scene+user combination, reject the duplicate.
     //
-    // TOCTOU note: there is a narrow SELECT→INSERT race window. A true fix
-    // would require a unique partial index on (userId, type, payload->>'sceneId')
-    // WHERE status IN ('pending','active'), but Postgres does not support
-    // expression-based partial indexes on JSONB paths cleanly. The SELECT check
-    // is sufficient to block the real-world double-click scenario.
+    // Two-layer defence:
+    //   1. Pre-check SELECT (below) — fast path; returns existingJobId for UX.
+    //   2. DB unique partial index `jobs_avatar_dedupe_uniq` (migration 0005) —
+    //      authoritative; closes the TOCTOU SELECT→INSERT race window.
+    //      Postgres DOES support partial unique expression indexes on JSONB paths
+    //      (contrary to the previous comment here — that comment was wrong).
+    //      The INSERT try/catch for 23505 unique_violation handles race losers.
     const existingActiveJobs = await db
       .select({ id: jobs.id })
       .from(jobs)
@@ -152,18 +152,41 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Insert job row with status pending
-  const [created] = await db
-    .insert(jobs)
-    .values({
-      userId: session.user.id,
-      type,
-      projectId: projectId || null,
-      status: "pending",
-      progress: 0,
-      payload: payload || null,
-    })
-    .returning();
+  // Insert job row with status pending.
+  // Wrapped in try/catch to handle 23505 unique_violation from the
+  // `jobs_avatar_dedupe_uniq` partial index (migration 0005). This closes the
+  // TOCTOU race where two concurrent POSTs both pass the SELECT pre-check above
+  // and then race to INSERT — the loser hits the constraint and gets a 409.
+  // Only 23505 on the specific constraint is caught; all other errors propagate
+  // as 500 so DB/network issues are not silently swallowed.
+  let created: { id: string };
+  try {
+    const rows = await db
+      .insert(jobs)
+      .values({
+        userId: session.user.id,
+        type,
+        projectId: projectId || null,
+        status: "pending",
+        progress: 0,
+        payload: payload || null,
+      })
+      .returning();
+    created = rows[0];
+  } catch (err) {
+    const pgErr = err as { code?: string; constraint_name?: string; constraint?: string };
+    const isUniqueViolation = pgErr.code === "23505";
+    const constraintName = pgErr.constraint_name ?? pgErr.constraint;
+    if (isUniqueViolation && constraintName === "jobs_avatar_dedupe_uniq") {
+      // Race loser: another concurrent INSERT already won the constraint race.
+      return NextResponse.json(
+        { error: "already_enqueued" },
+        { status: 409 }
+      );
+    }
+    // All other DB errors (connection failure, FK violation, etc.) propagate.
+    throw err;
+  }
 
   // Enqueue to BullMQ — jobId/userId AFTER spread to prevent client override
   const targetQueue = type.startsWith("longform-")
