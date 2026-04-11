@@ -34,6 +34,14 @@ type Payload = {
   sceneId: string;
   /** Optional override — usually taken from scenes.avatarPresetId. */
   avatarPresetId?: string;
+  /**
+   * When true, bypass the idempotency gate and re-run generation even if
+   * avatarVideoUrl + avatarProviderTaskId are already set on the scene row.
+   * Set by the client whenever the user explicitly clicks Regenerate or
+   * "모든 장면에 대해 생성하기" — this avoids the data-loss race introduced
+   * by the old PATCH-before-POST approach (Codex cold review C2).
+   */
+  regenerate?: boolean;
 };
 
 type JobData = {
@@ -106,7 +114,11 @@ export async function handleGenerateAvatarLipsync(
     // If a previous attempt already wrote avatarVideoUrl for this scene
     // with a matching provider task id, we've already spent the external
     // cost — return the existing URL without calling the provider again.
-    if (sceneRow.avatarVideoUrl && sceneRow.avatarProviderTaskId) {
+    // Honor explicit regenerate flag — forces re-run even if cached output
+    // exists. This avoids the data-loss race of the old PATCH-before-POST
+    // approach (Codex cold review C2): the client no longer needs to clear
+    // avatarVideoUrl before enqueuing; instead it passes regenerate:true.
+    if (!payload.regenerate && sceneRow.avatarVideoUrl && sceneRow.avatarProviderTaskId) {
       await db
         .update(jobs)
         .set({ status: "completed", progress: 100, updatedAt: new Date() })

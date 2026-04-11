@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 /**
- * Regression test for VERIFICATION.md CRITICAL C2:
- * "Regeneration is a no-op — handleRegenerate POSTs to /api/jobs without
- * first clearing avatarVideoUrl / avatarProviderTaskId, so the worker's
- * idempotency gate always returns skipped: true."
+ * Regression test for VERIFICATION.md CRITICAL C2 (updated after Codex cold review):
+ *
+ * OLD (fragile) approach:
+ *   PATCH /api/scenes/[id]/avatar with {avatarVideoUrl:null} THEN POST /api/jobs
+ *   → data-loss race: if POST fails, DB is already cleared
+ *
+ * NEW (safe) approach:
+ *   Single POST /api/jobs with payload.regenerate=true
+ *   → if POST fails, DB state is untouched (no data loss)
  *
  * These tests mount <AvatarSceneList> in RTL, mock fetch, click
- * the 재생성 button, and assert the PATCH to clear avatar state fires
- * BEFORE the POST to /api/jobs.
+ * the 재생성 button, and assert the new single-POST behaviour.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -48,18 +52,18 @@ const PRESETS: AvatarPreset[] = [
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe("AvatarSceneList — regeneration clears avatar state before enqueue (C2 regression)", () => {
+describe("AvatarSceneList — regeneration uses regenerate:true payload flag (C2 Codex cold review)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("sends PATCH with {avatarVideoUrl:null, avatarProviderTaskId:null} BEFORE POST to /api/jobs", async () => {
+  it("sends a single POST to /api/jobs with regenerate:true — no PATCH to clear avatar state", async () => {
     const fetchCalls: { method: string; url: string; body: unknown }[] = [];
 
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       const body = init?.body ? JSON.parse(init.body as string) : undefined;
       fetchCalls.push({ method: init?.method ?? "GET", url, body });
-      return { ok: true, status: 200, json: async () => ({ updated: true }) };
+      return { ok: true, status: 201, json: async () => ({ jobId: "job-new" }) };
     }));
 
     const scene = makeScene();
@@ -77,32 +81,34 @@ describe("AvatarSceneList — regeneration clears avatar state before enqueue (C
     fireEvent.click(regenBtn);
 
     await waitFor(() => {
-      expect(fetchCalls.length).toBeGreaterThanOrEqual(2);
+      expect(fetchCalls.length).toBeGreaterThanOrEqual(1);
     });
 
-    // First call must be the PATCH to clear avatar state
-    const firstCall = fetchCalls[0];
-    expect(firstCall.method).toBe("PATCH");
-    expect(firstCall.url).toContain("/api/scenes/scene-1/avatar");
-    expect(firstCall.body).toEqual({ avatarVideoUrl: null, avatarProviderTaskId: null });
-
-    // Second call must be the POST to enqueue the job
-    const secondCall = fetchCalls[1];
-    expect(secondCall.method).toBe("POST");
-    expect(secondCall.url).toBe("/api/jobs");
-    expect(secondCall.body).toMatchObject({
+    // Must be exactly one fetch call: the POST
+    expect(fetchCalls).toHaveLength(1);
+    const call = fetchCalls[0];
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("/api/jobs");
+    expect(call.body).toMatchObject({
       type: "generate-avatar-lipsync",
-      payload: { sceneId: "scene-1" },
+      payload: {
+        sceneId: "scene-1",
+        regenerate: true,
+      },
     });
+
+    // No PATCH must have fired — DB state is untouched
+    const patchCalls = fetchCalls.filter((c) => c.method === "PATCH");
+    expect(patchCalls).toHaveLength(0);
   });
 
-  it("does NOT enqueue job if PATCH clear fails (non-ok response)", async () => {
+  it("does NOT mutate DB state when POST fails — no PATCH calls at all", async () => {
     const fetchCalls: { method: string; url: string }[] = [];
 
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       fetchCalls.push({ method: init?.method ?? "GET", url });
-      // Simulate PATCH returning 403
-      return { ok: false, status: 403, json: async () => ({ error: "forbidden" }) };
+      // Simulate POST /api/jobs returning 500
+      return { ok: false, status: 500, json: async () => ({ error: "internal server error" }) };
     }));
 
     const scene = makeScene();
@@ -119,13 +125,16 @@ describe("AvatarSceneList — regeneration clears avatar state before enqueue (C
     const regenBtn = screen.getByTestId("regenerate-btn-scene-1");
     fireEvent.click(regenBtn);
 
-    // Wait a bit for any async operations
+    // Wait for any async operations to settle
     await new Promise((r) => setTimeout(r, 50));
 
-    // Only the PATCH should have fired; no POST
+    // Only the POST fired (and it failed), no PATCH at all
     expect(fetchCalls).toHaveLength(1);
-    expect(fetchCalls[0].method).toBe("PATCH");
-    expect(fetchCalls[0].url).toContain("/api/scenes/scene-1/avatar");
-    expect(fetchCalls.some((c) => c.url === "/api/jobs")).toBe(false);
+    expect(fetchCalls[0].method).toBe("POST");
+    expect(fetchCalls[0].url).toBe("/api/jobs");
+
+    // Crucially: no PATCH to clear avatar state — DB is untouched
+    const patchCalls = fetchCalls.filter((c) => c.method === "PATCH");
+    expect(patchCalls).toHaveLength(0);
   });
 });

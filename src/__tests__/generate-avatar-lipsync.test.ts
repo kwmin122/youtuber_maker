@@ -284,7 +284,7 @@ describe("handleGenerateAvatarLipsync", () => {
     );
   });
 
-  it("3. short-circuits idempotent when avatarVideoUrl already set", async () => {
+  it("3. short-circuits idempotent when avatarVideoUrl already set (regenerate absent/false)", async () => {
     mockFetch();
     mockSupabaseClient();
 
@@ -305,7 +305,7 @@ describe("handleGenerateAvatarLipsync", () => {
     const job = createMockJob({
       jobId: "job-1",
       userId: "user-aaa",
-      payload: { sceneId: "scene-1" },
+      payload: { sceneId: "scene-1" }, // no regenerate flag
     });
 
     const result = await handleGenerateAvatarLipsync(job, db as Parameters<typeof handleGenerateAvatarLipsync>[1]);
@@ -313,6 +313,78 @@ describe("handleGenerateAvatarLipsync", () => {
     expect(result.skipped).toBe(true);
     expect(result.avatarVideoUrl).toBe("https://cdn.example.com/existing-avatar.mp4");
     // Provider should NOT be called
+    expect(getUserAvatarProvider).not.toHaveBeenCalled();
+  });
+
+  it("3a. regenerate:true bypasses idempotency gate when avatar already exists (C2 Codex cold review)", async () => {
+    mockFetch();
+    mockSupabaseClient();
+    mockFfprobeDuration(4.5);
+
+    vi.mocked(getUserAvatarProvider).mockResolvedValue(makeProviderStub("completed"));
+    vi.mocked(uploadAvatarVideoFromPath).mockResolvedValue({
+      storagePath: "user-aaa/scene-1/avatar-new.mp4",
+      publicUrl: "https://cdn.example.com/avatar-new.mp4",
+    });
+
+    // Scene already has avatarVideoUrl + avatarProviderTaskId set
+    const sceneRow = [{
+      id: "scene-1", scriptId: "script-1", duration: 5,
+      avatarPresetId: "preset-1",
+      avatarVideoUrl: "https://cdn.example.com/existing-avatar.mp4",
+      avatarProviderTaskId: "existing-task-id",
+    }];
+    const scriptRow = [{ projectId: "project-1" }];
+    const projectRow = [{ userId: "user-aaa" }];
+    const audioAssetRow = [{ id: "asset-1", sceneId: "scene-1", type: "audio", status: "completed", url: "https://tts.example.com/audio.mp3" }];
+    const presetRow = [{ id: "preset-1", provider: "heygen", providerAvatarId: "avatar-xyz", previewImageUrl: "https://cdn.heygen.com/preview.jpg" }];
+
+    const db = createMockDb({
+      select: [sceneRow, scriptRow, projectRow, audioAssetRow, presetRow],
+    });
+
+    const job = createMockJob({
+      jobId: "job-1",
+      userId: "user-aaa",
+      payload: { sceneId: "scene-1", regenerate: true }, // explicit regenerate
+    });
+
+    const result = await handleGenerateAvatarLipsync(job, db as Parameters<typeof handleGenerateAvatarLipsync>[1]);
+
+    // Gate bypassed — provider was called and new video produced
+    expect(result.skipped).toBe(false);
+    expect(result.avatarVideoUrl).toBe("https://cdn.example.com/avatar-new.mp4");
+    expect(getUserAvatarProvider).toHaveBeenCalledWith("user-aaa", "heygen");
+    expect(uploadAvatarVideoFromPath).toHaveBeenCalledOnce();
+  });
+
+  it("3b. regenerate:false (explicit) still skips when cached — gate preserved for BullMQ retry dedup", async () => {
+    mockFetch();
+    mockSupabaseClient();
+
+    const sceneRow = [{
+      id: "scene-1", scriptId: "script-1", duration: 5,
+      avatarPresetId: "preset-1",
+      avatarVideoUrl: "https://cdn.example.com/existing-avatar.mp4",
+      avatarProviderTaskId: "existing-task-id",
+    }];
+    const scriptRow = [{ projectId: "project-1" }];
+    const projectRow = [{ userId: "user-aaa" }];
+
+    const db = createMockDb({
+      select: [sceneRow, scriptRow, projectRow],
+    });
+
+    const job = createMockJob({
+      jobId: "job-1",
+      userId: "user-aaa",
+      payload: { sceneId: "scene-1", regenerate: false }, // explicit false
+    });
+
+    const result = await handleGenerateAvatarLipsync(job, db as Parameters<typeof handleGenerateAvatarLipsync>[1]);
+
+    expect(result.skipped).toBe(true);
+    expect(result.avatarVideoUrl).toBe("https://cdn.example.com/existing-avatar.mp4");
     expect(getUserAvatarProvider).not.toHaveBeenCalled();
   });
 

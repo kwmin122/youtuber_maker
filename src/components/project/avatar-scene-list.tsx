@@ -63,26 +63,29 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
   }
 
   async function handleRegenerate(scene: Scene, projectId: string) {
-    // C2 fix: clear existing avatar state BEFORE enqueuing so the worker's
-    // idempotency gate (which protects against duplicate-enqueue) does not
-    // short-circuit the regeneration. The gate is intentionally kept strict —
-    // we must clear the DB columns here first.
-    const clearRes = await fetch(`/api/scenes/${scene.id}/avatar`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ avatarVideoUrl: null, avatarProviderTaskId: null }),
-    });
-    if (!clearRes.ok) return; // abort if clear failed (server will surface the error)
-
-    await fetch("/api/jobs", {
+    // C2 fix (Codex cold review): use regenerate:true payload flag instead of
+    // PATCH-before-POST. The old two-step approach had a data-loss race: if the
+    // POST to /api/jobs failed after the PATCH already cleared avatarVideoUrl,
+    // the user's existing avatar video was gone with no recovery path.
+    // Now a single POST with regenerate:true is enough — the worker's idempotency
+    // gate honors the flag and bypasses the skip-if-cached check.
+    const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         type: "generate-avatar-lipsync",
         projectId,
-        payload: { sceneId: scene.id, avatarPresetId: scene.avatarPresetId },
+        payload: {
+          sceneId: scene.id,
+          avatarPresetId: scene.avatarPresetId,
+          regenerate: true,
+        },
       }),
     });
+    if (!res.ok) {
+      // Nothing was mutated — no data loss. Surface the error (caller can add toast).
+      console.error(`[handleRegenerate] POST /api/jobs failed: ${res.status}`);
+    }
   }
 
   return (
