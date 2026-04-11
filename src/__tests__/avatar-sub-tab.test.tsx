@@ -98,7 +98,10 @@ describe("AvatarSubTab", () => {
       expect(jobCalls).toHaveLength(2);
     });
 
-    // Both calls must use type: "generate-avatar-lipsync"
+    // Both calls must use type: "generate-avatar-lipsync" and include regenerate:true
+    // (NEW-HIGH fix: preset/layout changes were silently ignored by the idempotency gate
+    // when regenerate was absent; now generateAll always passes regenerate:true so user
+    // intent is honored — Codex cold review finding)
     const jobCalls = fetchMock.mock.calls.filter(
       (args: unknown[]) => args[0] === "/api/jobs"
     );
@@ -106,6 +109,7 @@ describe("AvatarSubTab", () => {
       const body = JSON.parse((options as RequestInit).body as string);
       expect(body.type).toBe("generate-avatar-lipsync");
       expect(body.projectId).toBe("proj-1");
+      expect(body.payload.regenerate).toBe(true);
     }
   });
 

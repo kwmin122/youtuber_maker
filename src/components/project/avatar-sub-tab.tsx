@@ -81,13 +81,17 @@ export function AvatarSubTab({ projectId, scenes: initialScenes }: AvatarSubTabP
     }
     for (const scene of scenes) {
       const presetId = scene.avatarPresetId ?? defaultPresetId!;
+      // NEW-HIGH fix (Codex cold review): pass regenerate:true so that a preset
+      // or layout change made BEFORE clicking this button is honored. Without
+      // regenerate:true the worker's idempotency gate would skip scenes that
+      // already have avatarVideoUrl set, silently ignoring the new preset.
       await fetch("/api/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "generate-avatar-lipsync",
           projectId,
-          payload: { sceneId: scene.id, avatarPresetId: presetId },
+          payload: { sceneId: scene.id, avatarPresetId: presetId, regenerate: true },
         }),
       });
     }
