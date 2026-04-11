@@ -3,7 +3,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { scenes, mediaAssets, audioTracks, projects, jobs, jobEvents } from "@/lib/db/schema";
 import { exportVideo } from "@/lib/video/ffmpeg-export";
 import { uploadMedia } from "@/lib/media/storage";
-import type { ExportScene, ExportAudioTrack, ExportProgress } from "@/lib/video/types";
+import type { ExportScene, ExportAudioTrack, ExportProgress, AvatarLayout } from "@/lib/video/types";
 import { DEFAULT_SUBTITLE_STYLE } from "@/lib/video/types";
 
 type DrizzleInstance = {
@@ -72,6 +72,9 @@ export async function handleExportVideo(job: Job, db: DrizzleInstance) {
         subtitleStyle: (scene.subtitleStyle as ExportScene["subtitleStyle"]) || DEFAULT_SUBTITLE_STYLE,
         transitionType: (scene.transitionType as ExportScene["transitionType"]) || "cut",
         transitionDuration: scene.transitionDuration || 0,
+        // Phase 8: forward avatar fields so buildFullFilterGraph can emit overlay filters
+        avatarVideoUrl: scene.avatarVideoUrl ?? undefined,
+        avatarLayout: (scene.avatarLayout as AvatarLayout | null) ?? undefined,
       });
     }
 
