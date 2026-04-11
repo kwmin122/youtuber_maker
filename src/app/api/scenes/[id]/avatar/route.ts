@@ -22,6 +22,9 @@ const bodySchema = z.object({
     })
     .nullable()
     .optional(),
+  // Phase 8 C2 fix: allow clearing avatar state before re-enqueueing regeneration
+  avatarVideoUrl: z.string().nullable().optional(),
+  avatarProviderTaskId: z.string().nullable().optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -75,6 +78,12 @@ export async function PATCH(request: Request, { params }: Params) {
       }),
       ...(parsed.data.avatarLayout !== undefined && {
         avatarLayout: parsed.data.avatarLayout,
+      }),
+      ...(parsed.data.avatarVideoUrl !== undefined && {
+        avatarVideoUrl: parsed.data.avatarVideoUrl,
+      }),
+      ...(parsed.data.avatarProviderTaskId !== undefined && {
+        avatarProviderTaskId: parsed.data.avatarProviderTaskId,
       }),
       updatedAt: new Date(),
     })

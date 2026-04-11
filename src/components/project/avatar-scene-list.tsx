@@ -63,6 +63,17 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
   }
 
   async function handleRegenerate(scene: Scene, projectId: string) {
+    // C2 fix: clear existing avatar state BEFORE enqueuing so the worker's
+    // idempotency gate (which protects against duplicate-enqueue) does not
+    // short-circuit the regeneration. The gate is intentionally kept strict —
+    // we must clear the DB columns here first.
+    const clearRes = await fetch(`/api/scenes/${scene.id}/avatar`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ avatarVideoUrl: null, avatarProviderTaskId: null }),
+    });
+    if (!clearRes.ok) return; // abort if clear failed (server will surface the error)
+
     await fetch("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },

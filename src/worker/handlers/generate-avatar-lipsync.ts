@@ -276,6 +276,29 @@ export async function handleGenerateAvatarLipsync(
     // ---- ffprobe re-sync duration (D-09) ----
     const actualDuration = await probeDurationSeconds(outputVideoPath);
 
+    // ---- Orphan cleanup: delete previous avatar video from storage (D-12 / C2 fix) ----
+    // The scene row still holds the OLD avatarVideoUrl before this update runs.
+    // If the user regenerated with a different preset, we clean up the previous file
+    // from the avatar-videos bucket to avoid storage leaks.
+    if (sceneRow.avatarVideoUrl) {
+      try {
+        // Extract storage path from the public URL.
+        // Format: https://<project>.supabase.co/storage/v1/object/public/avatar-videos/<path>
+        const oldUrl = sceneRow.avatarVideoUrl;
+        const bucketMarker = "/avatar-videos/";
+        const markerIdx = oldUrl.indexOf(bucketMarker);
+        if (markerIdx !== -1) {
+          const oldPath = oldUrl.slice(markerIdx + bucketMarker.length);
+          await getServiceRoleClient().storage.from("avatar-videos").remove([oldPath]);
+        }
+      } catch (cleanupErr) {
+        console.error(
+          `[generate-avatar-lipsync] failed to delete old avatar storage object: ${(cleanupErr as Error).message}`
+        );
+        // Don't fail the job — cleanup failure is non-fatal
+      }
+    }
+
     // ---- Persist to scene row ----
     await db
       .update(scenes)
