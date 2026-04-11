@@ -67,7 +67,16 @@ export function AvatarSubTab({ projectId, scenes: initialScenes }: AvatarSubTabP
     return { totalMinutes, heygen, did };
   }, [scenes]);
 
+  // Client-side in-flight guard (Codex Retry-2 NEW-HIGH finding): prevents
+  // double-click from enqueuing 2N jobs. The server-side dedupe in /api/jobs
+  // is the authoritative gate; this state is UX sugar only.
+  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+
   const generateAll = useCallback(async () => {
+    // UX guard: block concurrent clicks. Server will also reject with 409
+    // if a duplicate somehow slips through.
+    if (isGeneratingAll) return;
+
     if (estimate.totalMinutes > 5) {
       if (!confirm(`예상 비용이 $${estimate.heygen} (HeyGen) 입니다. 계속할까요?`)) {
         return;
@@ -79,23 +88,29 @@ export function AvatarSubTab({ projectId, scenes: initialScenes }: AvatarSubTabP
         return;
       }
     }
-    for (const scene of scenes) {
-      const presetId = scene.avatarPresetId ?? defaultPresetId!;
-      // NEW-HIGH fix (Codex cold review): pass regenerate:true so that a preset
-      // or layout change made BEFORE clicking this button is honored. Without
-      // regenerate:true the worker's idempotency gate would skip scenes that
-      // already have avatarVideoUrl set, silently ignoring the new preset.
-      await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: "generate-avatar-lipsync",
-          projectId,
-          payload: { sceneId: scene.id, avatarPresetId: presetId, regenerate: true },
-        }),
-      });
+
+    setIsGeneratingAll(true);
+    try {
+      for (const scene of scenes) {
+        const presetId = scene.avatarPresetId ?? defaultPresetId!;
+        // NEW-HIGH fix (Codex cold review): pass regenerate:true so that a preset
+        // or layout change made BEFORE clicking this button is honored. Without
+        // regenerate:true the worker's idempotency gate would skip scenes that
+        // already have avatarVideoUrl set, silently ignoring the new preset.
+        await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            type: "generate-avatar-lipsync",
+            projectId,
+            payload: { sceneId: scene.id, avatarPresetId: presetId, regenerate: true },
+          }),
+        });
+      }
+    } finally {
+      setIsGeneratingAll(false);
     }
-  }, [scenes, defaultPresetId, projectId, estimate]);
+  }, [scenes, defaultPresetId, projectId, estimate, isGeneratingAll]);
 
   return (
     <div className="space-y-6">
@@ -165,8 +180,12 @@ export function AvatarSubTab({ projectId, scenes: initialScenes }: AvatarSubTabP
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={generateAll} size="lg">
-          모든 장면에 대해 생성하기
+        <Button
+          onClick={generateAll}
+          size="lg"
+          disabled={isGeneratingAll || scenes.length === 0}
+        >
+          {isGeneratingAll ? "생성 중..." : "모든 장면에 대해 생성하기"}
         </Button>
       </div>
     </div>

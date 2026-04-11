@@ -29,6 +29,13 @@ const DEFAULT_LAYOUT: AvatarLayoutValue = {
 export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: Props) {
   const [guardSceneId, setGuardSceneId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  // Client-side in-flight guard (Codex Retry-2 NEW-HIGH finding): prevents
+  // rapid re-clicks from enqueuing duplicate jobs. The server-side dedupe in
+  // /api/jobs POST is authoritative; this Set is UX sugar only.
+  // TODO: wire useSceneAvatarJobs polling hook here so the button stays
+  // disabled until the server-side job transitions out of pending/active,
+  // making the guard poll-driven rather than local-state-driven.
+  const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
 
   function withLongformGuard(scene: Scene, action: () => void) {
     if (scene.sourceType === "longform-clip" && !scene.avatarPresetId) {
@@ -63,28 +70,53 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
   }
 
   async function handleRegenerate(scene: Scene, projectId: string) {
-    // C2 fix (Codex cold review): use regenerate:true payload flag instead of
-    // PATCH-before-POST. The old two-step approach had a data-loss race: if the
-    // POST to /api/jobs failed after the PATCH already cleared avatarVideoUrl,
-    // the user's existing avatar video was gone with no recovery path.
-    // Now a single POST with regenerate:true is enough — the worker's idempotency
-    // gate honors the flag and bypasses the skip-if-cached check.
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "generate-avatar-lipsync",
-        projectId,
-        payload: {
-          sceneId: scene.id,
-          avatarPresetId: scene.avatarPresetId,
-          regenerate: true,
-        },
-      }),
-    });
-    if (!res.ok) {
-      // Nothing was mutated — no data loss. Surface the error (caller can add toast).
-      console.error(`[handleRegenerate] POST /api/jobs failed: ${res.status}`);
+    // UX guard: block concurrent clicks per scene. Server will also reject
+    // with 409 if a duplicate slips through (Codex Retry-2 NEW-HIGH fix).
+    if (regeneratingIds.has(scene.id)) return;
+
+    setRegeneratingIds((prev) => new Set(prev).add(scene.id));
+    try {
+      // C2 fix (Codex cold review): use regenerate:true payload flag instead of
+      // PATCH-before-POST. The old two-step approach had a data-loss race: if the
+      // POST to /api/jobs failed after the PATCH already cleared avatarVideoUrl,
+      // the user's existing avatar video was gone with no recovery path.
+      // Now a single POST with regenerate:true is enough — the worker's idempotency
+      // gate honors the flag and bypasses the skip-if-cached check.
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "generate-avatar-lipsync",
+          projectId,
+          payload: {
+            sceneId: scene.id,
+            avatarPresetId: scene.avatarPresetId,
+            regenerate: true,
+          },
+        }),
+      });
+      if (!res.ok && res.status !== 409) {
+        // 409 means already queued server-side — keep button disabled.
+        // Other errors: nothing was mutated — no data loss. Surface the error.
+        console.error(`[handleRegenerate] POST /api/jobs failed: ${res.status}`);
+      }
+      if (res.status !== 409) {
+        // Only clear in-flight on success or non-409 error.
+        // 409 means a job is already queued; keep the button disabled to
+        // prevent further re-clicks until the server state changes.
+        setRegeneratingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(scene.id);
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error(`[handleRegenerate] network error`, err);
+      setRegeneratingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(scene.id);
+        return next;
+      });
     }
   }
 
@@ -110,12 +142,12 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
                 size="sm"
                 variant="outline"
                 data-testid={`regenerate-btn-${scene.id}`}
-                disabled={!scene.avatarPresetId}
+                disabled={!scene.avatarPresetId || regeneratingIds.has(scene.id)}
                 onClick={() =>
                   withLongformGuard(scene, () => handleRegenerate(scene, projectId))
                 }
               >
-                재생성
+                {regeneratingIds.has(scene.id) ? "재생성 중..." : "재생성"}
               </Button>
             </div>
 
