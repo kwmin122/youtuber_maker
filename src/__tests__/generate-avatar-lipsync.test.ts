@@ -431,6 +431,131 @@ describe("handleGenerateAvatarLipsync", () => {
     expect(uploadAvatarVideoFromPath).toHaveBeenCalledOnce();
   });
 
+  it("7. HeyGen throws at submit (e.g. HTTP 429) — D-ID fallback succeeds (C3 regression)", async () => {
+    mockFetch();
+    mockSupabaseClient();
+    mockFfprobeDuration(3.8);
+
+    vi.mocked(uploadAvatarVideoFromPath).mockResolvedValue({
+      storagePath: "user-aaa/scene-1/avatar.mp4",
+      publicUrl: "https://cdn.example.com/did-avatar.mp4",
+    });
+
+    // HeyGen throws at generateLipsyncJob (429 / network error)
+    vi.mocked(getUserAvatarProvider)
+      .mockImplementation(async (_userId: string, preferred?: string) => {
+        if (preferred === "heygen") {
+          return {
+            provider: {
+              name: "heygen" as const,
+              generateLipsyncJob: vi.fn().mockRejectedValue(new Error("HTTP 429 Too Many Requests")),
+              waitForCompletion: vi.fn(),
+              pollJobStatus: vi.fn(),
+              listAvatars: vi.fn(),
+            },
+            providerName: "heygen" as const,
+            keyId: "key-1",
+          };
+        }
+        // D-ID succeeds
+        return {
+          provider: {
+            name: "did" as const,
+            generateLipsyncJob: vi.fn().mockResolvedValue("did-task-456"),
+            waitForCompletion: vi.fn().mockResolvedValue({
+              taskId: "did-task-456",
+              status: "completed",
+              videoUrl: "https://cdn.example.com/did-avatar.mp4",
+            }),
+            pollJobStatus: vi.fn(),
+            listAvatars: vi.fn(),
+          },
+          providerName: "did" as const,
+          keyId: "key-2",
+        };
+      });
+
+    const sceneRow = [{
+      id: "scene-1", scriptId: "script-1", duration: 5,
+      avatarPresetId: "preset-1", avatarVideoUrl: null, avatarProviderTaskId: null,
+    }];
+    const scriptRow = [{ projectId: "project-1" }];
+    const projectRow = [{ userId: "user-aaa" }];
+    const audioAssetRow = [{ id: "asset-1", sceneId: "scene-1", type: "audio", status: "completed", url: "https://tts.example.com/audio.mp3" }];
+    const presetRow = [{ id: "preset-1", provider: "heygen", providerAvatarId: "avatar-xyz", previewImageUrl: "https://cdn.heygen.com/preview.jpg" }];
+
+    const db = createMockDb({
+      select: [sceneRow, scriptRow, projectRow, audioAssetRow, presetRow],
+    });
+
+    const job = createMockJob({
+      jobId: "job-1",
+      userId: "user-aaa",
+      payload: { sceneId: "scene-1" },
+    });
+
+    const result = await handleGenerateAvatarLipsync(job, db as Parameters<typeof handleGenerateAvatarLipsync>[1]);
+
+    // Handler succeeds via D-ID despite HeyGen throw
+    expect(result.skipped).toBe(false);
+    expect(result.avatarVideoUrl).toBe("https://cdn.example.com/did-avatar.mp4");
+    expect(getUserAvatarProvider).toHaveBeenCalledWith("user-aaa", "heygen");
+    expect(getUserAvatarProvider).toHaveBeenCalledWith("user-aaa", "did");
+    expect(uploadAvatarVideoFromPath).toHaveBeenCalledOnce();
+  });
+
+  it("8. both providers throw — job marked failed with error message (C3 regression)", async () => {
+    mockFetch();
+    mockSupabaseClient();
+
+    // Both HeyGen and D-ID throw
+    vi.mocked(getUserAvatarProvider)
+      .mockImplementation(async (_userId: string, preferred?: string) => {
+        return {
+          provider: {
+            name: (preferred ?? "heygen") as "heygen" | "did",
+            generateLipsyncJob: vi.fn().mockRejectedValue(
+              new Error(preferred === "heygen" ? "HTTP 429" : "D-ID 503 Service Unavailable")
+            ),
+            waitForCompletion: vi.fn(),
+            pollJobStatus: vi.fn(),
+            listAvatars: vi.fn(),
+          },
+          providerName: (preferred ?? "heygen") as "heygen" | "did",
+          keyId: "key-1",
+        };
+      });
+
+    const sceneRow = [{
+      id: "scene-1", scriptId: "script-1", duration: 5,
+      avatarPresetId: "preset-1", avatarVideoUrl: null, avatarProviderTaskId: null,
+    }];
+    const scriptRow = [{ projectId: "project-1" }];
+    const projectRow = [{ userId: "user-aaa" }];
+    const audioAssetRow = [{ id: "asset-1", sceneId: "scene-1", type: "audio", status: "completed", url: "https://tts.example.com/audio.mp3" }];
+    const presetRow = [{ id: "preset-1", provider: "heygen", providerAvatarId: "avatar-xyz", previewImageUrl: "https://cdn.heygen.com/preview.jpg" }];
+
+    const db = createMockDb({
+      select: [sceneRow, scriptRow, projectRow, audioAssetRow, presetRow],
+    });
+
+    const job = createMockJob({
+      jobId: "job-1",
+      userId: "user-aaa",
+      payload: { sceneId: "scene-1" },
+    });
+
+    await expect(
+      handleGenerateAvatarLipsync(job, db as Parameters<typeof handleGenerateAvatarLipsync>[1])
+    ).rejects.toThrow(/all avatar providers failed/);
+
+    // Both providers attempted
+    expect(getUserAvatarProvider).toHaveBeenCalledWith("user-aaa", "heygen");
+    expect(getUserAvatarProvider).toHaveBeenCalledWith("user-aaa", "did");
+    // Storage upload must NOT have been called
+    expect(uploadAvatarVideoFromPath).not.toHaveBeenCalled();
+  });
+
   it("6. returns skipped=true on CAS race (job already active — returning().length === 0)", async () => {
     mockFetch();
     mockSupabaseClient();

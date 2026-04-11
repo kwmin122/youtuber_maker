@@ -220,18 +220,28 @@ export async function handleGenerateAvatarLipsync(
         req.referenceImageUrl = req.avatarId ? undefined : (presetRow.previewImageUrl ?? undefined);
       }
 
-      const taskId = await resolved.provider.generateLipsyncJob(req);
-      const task = await resolved.provider.waitForCompletion(taskId, {
-        maxAttempts: 60,
-        intervalMs: 5_000,
-      });
-      if (task.status === "completed" && task.videoUrl) {
-        return { taskId, videoUrl: task.videoUrl };
+      // C3 fix: wrap the submit+poll block in try/catch so that a thrown
+      // exception from generateLipsyncJob (e.g. HeyGen 429 / 5xx / network
+      // error) returns null instead of escaping and bypassing the D-ID fallback.
+      try {
+        const taskId = await resolved.provider.generateLipsyncJob(req);
+        const task = await resolved.provider.waitForCompletion(taskId, {
+          maxAttempts: 60,
+          intervalMs: 5_000,
+        });
+        if (task.status === "completed" && task.videoUrl) {
+          return { taskId, videoUrl: task.videoUrl };
+        }
+        console.warn(
+          `[generate-avatar-lipsync] ${preferred} task failed: ${task.errorMessage ?? "no video url"}`
+        );
+        return null;
+      } catch (err) {
+        console.error(
+          `[generate-avatar-lipsync] ${preferred} threw during submit/wait: ${(err as Error).message}`
+        );
+        return null;
       }
-      console.warn(
-        `[generate-avatar-lipsync] ${preferred} failed: ${task.errorMessage ?? "no video url"}`
-      );
-      return null;
     }
 
     const primary = await tryProvider("heygen");
