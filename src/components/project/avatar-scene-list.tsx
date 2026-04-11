@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { AvatarLayoutPicker, type AvatarLayoutValue } from "./avatar-layout-picker";
 import type { AvatarPreset, Scene } from "./avatar-sub-tab";
+import { useSceneAvatarJobs } from "@/hooks/use-scene-avatar-jobs";
 
 interface Props {
   projectId: string;
@@ -29,13 +30,20 @@ const DEFAULT_LAYOUT: AvatarLayoutValue = {
 export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: Props) {
   const [guardSceneId, setGuardSceneId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-  // Client-side in-flight guard (Codex Retry-2 NEW-HIGH finding): prevents
-  // rapid re-clicks from enqueuing duplicate jobs. The server-side dedupe in
-  // /api/jobs POST is authoritative; this Set is UX sugar only.
-  // TODO: wire useSceneAvatarJobs polling hook here so the button stays
-  // disabled until the server-side job transitions out of pending/active,
-  // making the guard poll-driven rather than local-state-driven.
+  // Client-side in-flight guard: prevents rapid re-clicks from enqueuing
+  // duplicate jobs. Cleared via finally on every POST exit path.
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
+
+  // Poll server job state every 3 s — authoritative source of truth for
+  // "is a job running for this scene". Codex Retry-3 UX fix: replaces the
+  // local-state-only approach that left the button permanently disabled on 409.
+  const { progressMap } = useSceneAvatarJobs(projectId);
+
+  /** True when the server has a pending or active job for this scene. */
+  function serverInFlight(sceneId: string): boolean {
+    const entry = progressMap[sceneId];
+    return entry?.status === "pending" || entry?.status === "active";
+  }
 
   function withLongformGuard(scene: Scene, action: () => void) {
     if (scene.sourceType === "longform-clip" && !scene.avatarPresetId) {
@@ -96,22 +104,18 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
         }),
       });
       if (!res.ok && res.status !== 409) {
-        // 409 means already queued server-side — keep button disabled.
         // Other errors: nothing was mutated — no data loss. Surface the error.
         console.error(`[handleRegenerate] POST /api/jobs failed: ${res.status}`);
       }
-      if (res.status !== 409) {
-        // Only clear in-flight on success or non-409 error.
-        // 409 means a job is already queued; keep the button disabled to
-        // prevent further re-clicks until the server state changes.
-        setRegeneratingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(scene.id);
-          return next;
-        });
-      }
+      // On 409: a server job is already running. We release the local in-flight
+      // flag here — the polling hook (useSceneAvatarJobs) picks up the server
+      // state within 3 s and re-disables the button via serverInFlight(). This
+      // avoids the permanent-disable bug (Codex Retry-3 UX finding).
     } catch (err) {
       console.error(`[handleRegenerate] network error`, err);
+    } finally {
+      // Always release the local guard so the button is controlled by
+      // serverInFlight() poll state, not stale local state.
       setRegeneratingIds((prev) => {
         const next = new Set(prev);
         next.delete(scene.id);
@@ -142,12 +146,12 @@ export function AvatarSceneList({ projectId, scenes, presets, onSceneUpdate }: P
                 size="sm"
                 variant="outline"
                 data-testid={`regenerate-btn-${scene.id}`}
-                disabled={!scene.avatarPresetId || regeneratingIds.has(scene.id)}
+                disabled={!scene.avatarPresetId || regeneratingIds.has(scene.id) || serverInFlight(scene.id)}
                 onClick={() =>
                   withLongformGuard(scene, () => handleRegenerate(scene, projectId))
                 }
               >
-                {regeneratingIds.has(scene.id) ? "재생성 중..." : "재생성"}
+                {(regeneratingIds.has(scene.id) || serverInFlight(scene.id)) ? "재생성 중..." : "재생성"}
               </Button>
             </div>
 

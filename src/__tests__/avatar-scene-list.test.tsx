@@ -12,12 +12,21 @@
  *
  * These tests mount <AvatarSceneList> in RTL, mock fetch, click
  * the 재생성 button, and assert the new single-POST behaviour.
+ *
+ * Codex Retry-3 UX fix: also tests polling-hook-driven button state.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AvatarSceneList } from "@/components/project/avatar-scene-list";
 import type { Scene, AvatarPreset } from "@/components/project/avatar-sub-tab";
+
+// Mock the polling hook so tests control server job state without real fetches.
+// Must be declared before importing the component (vi.mock is hoisted).
+const mockProgressMap = vi.hoisted(() => ({ value: {} as Record<string, { status: string; progress: number }> }));
+vi.mock("@/hooks/use-scene-avatar-jobs", () => ({
+  useSceneAvatarJobs: () => ({ progressMap: mockProgressMap.value }),
+}));
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -55,6 +64,7 @@ const PRESETS: AvatarPreset[] = [
 describe("AvatarSceneList — regeneration uses regenerate:true payload flag (C2 Codex cold review)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockProgressMap.value = {};
   });
 
   it("sends a single POST to /api/jobs with regenerate:true — no PATCH to clear avatar state", async () => {
@@ -136,5 +146,105 @@ describe("AvatarSceneList — regeneration uses regenerate:true payload flag (C2
     // Crucially: no PATCH to clear avatar state — DB is untouched
     const patchCalls = fetchCalls.filter((c) => c.method === "PATCH");
     expect(patchCalls).toHaveLength(0);
+  });
+});
+
+describe("AvatarSceneList — polling-hook-driven button state (Codex Retry-3 UX fix)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockProgressMap.value = {};
+  });
+
+  it("button is disabled when polling hook reports server job as pending", () => {
+    // Server has an active pending job for scene-1
+    mockProgressMap.value = { "scene-1": { status: "pending", progress: 10 } };
+
+    vi.stubGlobal("fetch", vi.fn());
+
+    const scene = makeScene();
+
+    render(
+      <AvatarSceneList
+        projectId="project-1"
+        scenes={[scene]}
+        presets={PRESETS}
+        onSceneUpdate={vi.fn()}
+      />
+    );
+
+    const regenBtn = screen.getByTestId("regenerate-btn-scene-1");
+    expect(regenBtn).toBeDisabled();
+  });
+
+  it("button is disabled when polling hook reports server job as active", () => {
+    mockProgressMap.value = { "scene-1": { status: "active", progress: 50 } };
+
+    vi.stubGlobal("fetch", vi.fn());
+
+    const scene = makeScene();
+
+    render(
+      <AvatarSceneList
+        projectId="project-1"
+        scenes={[scene]}
+        presets={PRESETS}
+        onSceneUpdate={vi.fn()}
+      />
+    );
+
+    const regenBtn = screen.getByTestId("regenerate-btn-scene-1");
+    expect(regenBtn).toBeDisabled();
+  });
+
+  it("button is enabled when polling hook reports server job as completed", () => {
+    // Job completed — no longer in-flight
+    mockProgressMap.value = { "scene-1": { status: "completed", progress: 100 } };
+
+    vi.stubGlobal("fetch", vi.fn());
+
+    const scene = makeScene();
+
+    render(
+      <AvatarSceneList
+        projectId="project-1"
+        scenes={[scene]}
+        presets={PRESETS}
+        onSceneUpdate={vi.fn()}
+      />
+    );
+
+    const regenBtn = screen.getByTestId("regenerate-btn-scene-1");
+    expect(regenBtn).not.toBeDisabled();
+  });
+
+  it("button re-enables after 409 POST — local regeneratingIds cleared in finally", async () => {
+    // Server returns 409 (job already running from another source), but polling
+    // hook shows no in-flight job for this scene (simulating it just completed).
+    mockProgressMap.value = {};
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "already_enqueued" }),
+    }));
+
+    const scene = makeScene();
+
+    render(
+      <AvatarSceneList
+        projectId="project-1"
+        scenes={[scene]}
+        presets={PRESETS}
+        onSceneUpdate={vi.fn()}
+      />
+    );
+
+    const regenBtn = screen.getByTestId("regenerate-btn-scene-1");
+    fireEvent.click(regenBtn);
+
+    // After async POST settles, button should re-enable (finally cleared local guard)
+    await waitFor(() => {
+      expect(regenBtn).not.toBeDisabled();
+    });
   });
 });
