@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { jobs, longformSources } from "@/lib/db/schema";
+import { jobs, longformSources, scenes, scripts, projects } from "@/lib/db/schema";
 import { getQueue } from "@/lib/queue";
 import { getLongformQueue } from "@/lib/queue-longform";
 import { getServerSession } from "@/lib/auth/get-session";
@@ -81,6 +81,39 @@ export async function POST(request: NextRequest) {
       );
     }
     if (sourceRow.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: "forbidden" },
+        { status: 403 }
+      );
+    }
+  }
+
+  // IDOR defense — generate-avatar-lipsync takes payload.sceneId; without a
+  // pre-check any authenticated user could enqueue avatar generation against
+  // another user's scene. Phase 8 verification, H1 (same class as Codex CRITICAL-2).
+  if (type === "generate-avatar-lipsync") {
+    const rawSceneId = payload?.sceneId;
+    if (typeof rawSceneId !== "string" || rawSceneId.length === 0) {
+      return NextResponse.json(
+        { error: "generate-avatar-lipsync requires payload.sceneId" },
+        { status: 400 }
+      );
+    }
+    // Ownership chain: scenes → scripts → projects → userId
+    const [ownerRow] = await db
+      .select({ userId: projects.userId })
+      .from(scenes)
+      .leftJoin(scripts, eq(scripts.id, scenes.scriptId))
+      .leftJoin(projects, eq(projects.id, scripts.projectId))
+      .where(eq(scenes.id, rawSceneId))
+      .limit(1);
+    if (!ownerRow) {
+      return NextResponse.json(
+        { error: "scene not found" },
+        { status: 404 }
+      );
+    }
+    if (ownerRow.userId !== session.user.id) {
       return NextResponse.json(
         { error: "forbidden" },
         { status: 403 }
