@@ -36,6 +36,13 @@
       "when": 1775824943077,
       "tag": "0004_phase8_avatar_unique_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775871379300,
+      "tag": "0005_jobs_avatar_dedupe_index",
+      "breakpoints": true
     }
   ]
 }
