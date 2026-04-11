@@ -27,7 +27,7 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
     avatarLayout: null,
     avatarVideoUrl: "https://cdn.example.com/existing.mp4",
     avatarProviderTaskId: "task-old",
-    sourceType: "original",
+    sourceType: "manual",
     ...overrides,
   };
 }
@@ -35,13 +35,14 @@ function makeScene(overrides: Partial<Scene> = {}): Scene {
 const PRESETS: AvatarPreset[] = [
   {
     id: "preset-1",
+    userId: null,
     provider: "heygen",
+    providerAvatarId: "avatar-xyz",
     gender: "female",
     ageGroup: "adult",
-    style: "professional",
+    style: "business",
     previewImageUrl: "https://cdn.example.com/preview.jpg",
-    isCustom: false,
-    label: "Professional Female",
+    source: "library",
   },
 ];
 
