@@ -76,6 +76,13 @@ vi.mock("drizzle-orm", () => ({
   eq: (...args: unknown[]) => ({ __eq: args }),
   and: (...args: unknown[]) => ({ __and: args }),
   desc: (...args: unknown[]) => ({ __desc: args }),
+  inArray: (...args: unknown[]) => ({ __inArray: args }),
+  sql: Object.assign(
+    (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      __sql: { strings: Array.from(strings), values },
+    }),
+    { empty: { __sql: "empty" } }
+  ),
 }));
 
 import { POST } from "@/app/api/jobs/route";

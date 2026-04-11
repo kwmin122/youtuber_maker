@@ -5,7 +5,7 @@ import { jobs, longformSources, scenes, scripts, projects } from "@/lib/db/schem
 import { getQueue } from "@/lib/queue";
 import { getLongformQueue } from "@/lib/queue-longform";
 import { getServerSession } from "@/lib/auth/get-session";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 
 const ALLOWED_JOB_TYPES = [
   "test",
@@ -117,6 +117,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "forbidden" },
         { status: 403 }
+      );
+    }
+
+    // Scene-level duplicate-enqueue protection (Codex Retry-2 NEW-HIGH finding):
+    // If a pending/active generate-avatar-lipsync job already exists for this
+    // scene+user combination, reject the duplicate. This is the authoritative
+    // server-side guard — the client-side guard in avatar-sub-tab.tsx and
+    // avatar-scene-list.tsx is UX sugar only.
+    //
+    // TOCTOU note: there is a narrow SELECT→INSERT race window. A true fix
+    // would require a unique partial index on (userId, type, payload->>'sceneId')
+    // WHERE status IN ('pending','active'), but Postgres does not support
+    // expression-based partial indexes on JSONB paths cleanly. The SELECT check
+    // is sufficient to block the real-world double-click scenario.
+    const existingActiveJobs = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.userId, session.user.id),
+          eq(jobs.type, "generate-avatar-lipsync"),
+          inArray(jobs.status, ["pending", "active"]),
+          sql`${jobs.payload}->>'sceneId' = ${rawSceneId}`
+        )
+      )
+      .limit(1);
+
+    if (existingActiveJobs.length > 0) {
+      return NextResponse.json(
+        { error: "already_enqueued", existingJobId: existingActiveJobs[0].id },
+        { status: 409 }
       );
     }
   }
