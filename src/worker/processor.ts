@@ -17,6 +17,8 @@ import { handleLongformDownload } from "./handlers/longform-download";
 import { handleLongformAnalyze } from "./handlers/longform-analyze";
 import { handleLongformClip } from "./handlers/longform-clip";
 import { handleGenerateAvatarLipsync } from "./handlers/generate-avatar-lipsync";
+import { handleIngestTrends } from "./handlers/ingest-trends";
+import { handlePrecomputeGapRationales } from "./handlers/precompute-gap-rationales";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -48,6 +50,10 @@ export async function processJob(job: Job) {
       return handleFetchMetrics(job, db);
     case "generate-avatar-lipsync":
       return handleGenerateAvatarLipsync(job, db);
+    case "ingest-trends":
+      return handleIngestTrends(job, db);
+    case "precompute-gap-rationales":
+      return handlePrecomputeGapRationales(job, db);
     case "longform-download":
       return handleLongformDownload(job, db);
     case "longform-analyze":
