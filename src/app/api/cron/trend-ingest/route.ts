@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { trendIngestionRuns } from "@/lib/db/schema";
 import { getQueue } from "@/lib/queue";
@@ -21,7 +22,11 @@ function validateSecret(request: NextRequest): boolean {
   const header = request.headers.get("x-cron-secret");
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const provided = header ?? bearer;
-  return typeof provided === "string" && provided === env.CRON_SECRET;
+  if (typeof provided !== "string") return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(env.CRON_SECRET);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 async function handle(request: NextRequest) {
@@ -51,10 +56,6 @@ async function handle(request: NextRequest) {
     { ingestionRunId: run.id, source: "vercel-cron" },
     { status: 202 }
   );
-}
-
-export async function POST(request: NextRequest) {
-  return handle(request);
 }
 
 export async function GET(request: NextRequest) {

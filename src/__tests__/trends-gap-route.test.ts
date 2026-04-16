@@ -78,6 +78,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((_a: unknown, _b: unknown) => `eq`),
   and: vi.fn((...args: unknown[]) => `and`),
   desc: vi.fn((a: unknown) => `desc`),
+  sql: vi.fn(() => `sql_expr`),
 }));
 
 import { GET } from "@/app/api/trends/gap/route";

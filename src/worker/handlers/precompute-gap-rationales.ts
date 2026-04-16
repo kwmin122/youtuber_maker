@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { createHash } from "crypto";
 import {
   jobs,
@@ -15,6 +15,7 @@ import {
   buildGapRationalePrompt,
   parseGapRationaleResponse,
 } from "@/lib/ai/prompts";
+import { buildBenchmarkTokenSet } from "@/lib/trends/setdiff";
 
 type DrizzleInstance = {
   update: typeof import("@/lib/db").db.update;
@@ -73,19 +74,31 @@ export async function handlePrecomputeGapRationales(
       .update(rows.map((r) => r.channelId).sort().join(","))
       .digest("hex");
 
-    // 2. Build benchmark token set
-    const benchmarkTokens = new Set<string>();
-    for (const r of rows) {
-      const hay = `${r.title} ${r.description ?? ""}`
-        .normalize("NFC")
-        .toLowerCase();
-      const toks = hay.match(/[\p{L}\p{N}]+/gu) || [];
-      for (const t of toks) {
-        if (t.length >= 2) benchmarkTokens.add(t);
-      }
-    }
+    // 2. Build benchmark token set (uses KO_STOPWORDS from setdiff.ts — rule 17)
+    const benchmarkTokens = buildBenchmarkTokenSet(rows);
 
-    // 3. Fetch latest snapshot batch (latest 500 rows, KR only for now)
+    // 3. Determine latest snapshot date, then fetch that day's rows only
+    const [latestMeta] = await db
+      .select({ recordedAt: trendSnapshots.recordedAt })
+      .from(trendSnapshots)
+      .where(eq(trendSnapshots.regionCode, "KR"))
+      .orderBy(desc(trendSnapshots.recordedAt))
+      .limit(1);
+
+    if (!latestMeta) {
+      await db
+        .update(jobs)
+        .set({
+          status: "completed",
+          progress: 100,
+          result: { skipped: "no_snapshots" },
+          updatedAt: new Date(),
+        })
+        .where(eq(jobs.id, jobId));
+      return;
+    }
+    const latestSnapshotDate = latestMeta.recordedAt.toISOString().slice(0, 10);
+
     const snapshotRows = await db
       .select({
         keyword: trendSnapshots.keyword,
@@ -95,8 +108,13 @@ export async function handlePrecomputeGapRationales(
         recordedAt: trendSnapshots.recordedAt,
       })
       .from(trendSnapshots)
-      .where(eq(trendSnapshots.regionCode, "KR"))
-      .orderBy(desc(trendSnapshots.recordedAt))
+      .where(
+        and(
+          eq(trendSnapshots.regionCode, "KR"),
+          sql`${trendSnapshots.recordedAt}::date = ${latestSnapshotDate}::date`
+        )
+      )
+      .orderBy(trendSnapshots.rank)
       .limit(500);
 
     if (snapshotRows.length === 0) {
@@ -111,9 +129,6 @@ export async function handlePrecomputeGapRationales(
         .where(eq(jobs.id, jobId));
       return;
     }
-    const latestSnapshotDate = snapshotRows[0].recordedAt
-      .toISOString()
-      .slice(0, 10);
 
     // 4. Tier 1 set-diff
     const seen = new Set<string>();

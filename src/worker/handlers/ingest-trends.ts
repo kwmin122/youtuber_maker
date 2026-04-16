@@ -95,8 +95,8 @@ export async function handleIngestTrends(
               channelTitle: item.channelTitle,
             },
           });
+          rank++;
         }
-        rank++;
       }
       successCount++;
     } catch (err) {

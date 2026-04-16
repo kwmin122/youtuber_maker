@@ -1,9 +1,8 @@
 /**
- * Phase 9 plan 09-03 — unit tests for POST|GET /api/cron/trend-ingest
+ * Phase 9 plan 09-03 — unit tests for GET /api/cron/trend-ingest
  *
- * Uses mocked DB + queue + env following the project's test pattern.
- * Covers: secret validation (missing, wrong, correct), Authorization: Bearer form,
- * GET method acceptance.
+ * POST was removed (attack-surface reduction). All tests use GET.
+ * Covers: secret validation (missing, wrong, correct), Authorization: Bearer form.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -39,15 +38,7 @@ vi.mock("@/lib/db/schema", () => ({
 }));
 
 // Import AFTER mocks so the module picks up env.CRON_SECRET
-import { POST, GET } from "@/app/api/cron/trend-ingest/route";
-
-async function callPost(headers: Record<string, string> = {}) {
-  const req = new NextRequest("http://localhost/api/cron/trend-ingest", {
-    method: "POST",
-    headers,
-  });
-  return POST(req);
-}
+import { GET } from "@/app/api/cron/trend-ingest/route";
 
 async function callGet(headers: Record<string, string> = {}) {
   const req = new NextRequest("http://localhost/api/cron/trend-ingest", {
@@ -57,25 +48,25 @@ async function callGet(headers: Record<string, string> = {}) {
   return GET(req);
 }
 
-describe("POST /api/cron/trend-ingest", () => {
+describe("GET /api/cron/trend-ingest", () => {
   beforeEach(() => {
     queueAdd.mockReset();
   });
 
   it("401 when x-cron-secret header is missing", async () => {
-    const res = await callPost({});
+    const res = await callGet({});
     expect(res.status).toBe(401);
     expect(queueAdd).not.toHaveBeenCalled();
   });
 
   it("401 when x-cron-secret header is wrong", async () => {
-    const res = await callPost({ "x-cron-secret": "wrong" });
+    const res = await callGet({ "x-cron-secret": "wrong" });
     expect(res.status).toBe(401);
     expect(queueAdd).not.toHaveBeenCalled();
   });
 
   it("202 when x-cron-secret matches, inserts run row, enqueues BullMQ", async () => {
-    const res = await callPost({ "x-cron-secret": "test-cron-secret-abcdef123456" });
+    const res = await callGet({ "x-cron-secret": "test-cron-secret-abcdef123456" });
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({ source: "vercel-cron" });
@@ -94,12 +85,7 @@ describe("POST /api/cron/trend-ingest", () => {
   });
 
   it("accepts Authorization: Bearer header form", async () => {
-    const res = await callPost({ authorization: "Bearer test-cron-secret-abcdef123456" });
-    expect(res.status).toBe(202);
-  });
-
-  it("GET method is accepted (Vercel Cron default)", async () => {
-    const res = await callGet({ "x-cron-secret": "test-cron-secret-abcdef123456" });
+    const res = await callGet({ authorization: "Bearer test-cron-secret-abcdef123456" });
     expect(res.status).toBe(202);
   });
 });

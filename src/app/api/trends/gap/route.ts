@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   projects,
@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Compute fresh
+  // Compute fresh — filter to latest day only to avoid cross-day contamination
   const snapshotRows = await db
     .select({
       keyword: trendSnapshots.keyword,
@@ -128,7 +128,12 @@ export async function GET(request: NextRequest) {
       source: trendSnapshots.source,
     })
     .from(trendSnapshots)
-    .where(eq(trendSnapshots.regionCode, "KR"))
+    .where(
+      and(
+        eq(trendSnapshots.regionCode, "KR"),
+        sql`${trendSnapshots.recordedAt}::date = ${latestSnapshotDate}::date`
+      )
+    )
     .orderBy(desc(trendSnapshots.recordedAt))
     .limit(SNAPSHOT_WINDOW);
 

@@ -36,19 +36,19 @@ export function TrendDashboard() {
       const json: TrendsApiResponse = await res.json();
       setData(json);
       const categoryIds = Object.keys(json.categories).map(Number);
-      if (categoryIds.length > 0 && selectedCategoryId === null) {
-        setSelectedCategoryId(categoryIds[0]);
+      if (categoryIds.length > 0) {
+        setSelectedCategoryId((prev) => prev ?? categoryIds[0]);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "로드 오류");
     } finally {
       setLoading(false);
     }
-  }, [selectedCategoryId]);
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   async function handleManualRefresh() {
     if (Date.now() - lastRefreshAt < REFRESH_COOLDOWN_MS) {

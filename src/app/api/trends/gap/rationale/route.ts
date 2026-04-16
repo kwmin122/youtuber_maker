@@ -10,6 +10,7 @@ import {
   trendGapAnalyses,
 } from "@/lib/db/schema";
 import { getServerSession } from "@/lib/auth/get-session";
+import { tryAcquireRefreshToken } from "@/lib/trends/rate-limit";
 import { getUserAIClient } from "@/lib/ai/get-user-ai-client";
 import {
   buildGapRationalePrompt,
@@ -118,6 +119,15 @@ export async function POST(request: NextRequest) {
       suggestedAngle: existingRationale.suggestedAngle,
       hitCache: true,
     });
+  }
+
+  // Rate-limit per user (rule 16 — one on-demand call per 60 s per user)
+  const rl = tryAcquireRefreshToken(`rationale:${session.user.id}`);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: rl.retryAfterMs },
+      { status: 429 }
+    );
   }
 
   // On-demand Gemini call (rule 10)

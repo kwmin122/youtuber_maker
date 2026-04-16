@@ -28,7 +28,10 @@ export async function fetchDailyTrends(params: {
   try {
     // Rule 13: dynamic import inside the feature-flag branch.
     const mod = await import("google-trends-api");
-    const raw = await mod.dailyTrends({
+    // CJS/ESM interop: the function may live on mod.default or mod directly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (mod.default ?? mod) as any;
+    const raw = await api.dailyTrends({
       trendDate: new Date(),
       geo: params.geo,
       hl: "ko",
