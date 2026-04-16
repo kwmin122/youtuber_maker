@@ -2,15 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-
-interface TopicRecommendation {
-  title: string;
-  description: string;
-  rationale: string;
-  suggestedHookType: string;
-  suggestedStructure: string;
-  viralPotential: "high" | "medium" | "low";
-}
+import type { TopicRecommendation } from "@/lib/ai/types";
 
 interface TopicPickerProps {
   topics: TopicRecommendation[];

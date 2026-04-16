@@ -89,6 +89,17 @@ export interface StructurePattern {
   frequency: number;
 }
 
+/**
+ * Canonical topic recommendation shape used by:
+ *  - `scripts/analyses` jsonb column (analyze-benchmark handler output)
+ *  - `src/components/project/topic-picker.tsx` (UI)
+ *  - Phase 9 `analyze-benchmark` enrichment that attaches `trendBadge`
+ *
+ * Keep this file as the single source of truth. When `trendBadge` is
+ * populated the topic was cross-referenced against the latest
+ * `trend_snapshots` in a matching category and found to overlap with a
+ * current trend keyword.
+ */
 export interface TopicRecommendation {
   /** Recommended topic title */
   title: string;
@@ -102,6 +113,13 @@ export interface TopicRecommendation {
   suggestedStructure: string;
   /** Estimated viral potential: 'high' | 'medium' | 'low' */
   viralPotential: "high" | "medium" | "low";
+  /** Phase 9 R-05 — optional trend cross-reference. */
+  trendBadge?: {
+    source: "youtube" | "google-trends";
+    score: number; // normalized 0..100 (rank-inverted or raw score)
+    keyword: string; // the matched trend keyword
+    categoryId: number;
+  };
 }
 
 export interface BenchmarkAnalysisResult {
