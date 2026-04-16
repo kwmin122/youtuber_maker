@@ -33,17 +33,17 @@ vi.mock("@/lib/db", () => {
   function makeThenableChain(resolvedWith: unknown[]) {
     let _resolvedWith = resolvedWith;
 
-    const chain: Record<string, unknown> & PromiseLike<unknown[]> = {
-      then(onfulfilled: (v: unknown[]) => unknown, _onrejected?: unknown) {
-        return Promise.resolve(_resolvedWith).then(
-          onfulfilled as (v: unknown) => unknown
-        );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chain: any = {
+      // Make chain awaitable (thenable)
+      then(onfulfilled?: unknown, _onrejected?: unknown) {
+        return Promise.resolve(_resolvedWith).then(onfulfilled as never);
       },
-      catch(onrejected: (e: unknown) => unknown) {
-        return Promise.resolve(_resolvedWith).catch(onrejected);
+      catch(onrejected: unknown) {
+        return Promise.resolve(_resolvedWith).catch(onrejected as never);
       },
-      finally(onfinally: () => void) {
-        return Promise.resolve(_resolvedWith).finally(onfinally);
+      finally(onfinally: unknown) {
+        return Promise.resolve(_resolvedWith).finally(onfinally as never);
       },
       from: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
