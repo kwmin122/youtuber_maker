@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { AudioWaveform } from "./audio-waveform";
 import { AudioLibraryDialog } from "./audio-library-dialog";
+import { MusicPickerDialog } from "./music-picker-dialog";
 import type { AudioLibraryEntry } from "@/lib/video/types";
 import { Music, Zap, Trash2, Upload } from "lucide-react";
 
@@ -38,7 +39,7 @@ interface AudioTrackManagerProps {
 }
 
 export function AudioTrackManager({
-  projectId: _projectId,
+  projectId,
   tracks,
   onAddTrack,
   onUpdateTrack,
@@ -46,6 +47,7 @@ export function AudioTrackManager({
 }: AudioTrackManagerProps) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryType, setLibraryType] = useState<"bgm" | "sfx">("bgm");
+  const [musicPickerOpen, setMusicPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleLibrarySelect(entry: AudioLibraryEntry) {
@@ -72,6 +74,24 @@ export function AudioTrackManager({
     }
   }
 
+  function handleMusicPickerTrackAdded(track: {
+    id: string;
+    name: string;
+    type: "bgm";
+    url: string;
+    startTime: number;
+    endTime: number | null;
+    volume: number;
+  }) {
+    onAddTrack({
+      type: track.type,
+      name: track.name,
+      // No libraryId and no file — Pixabay CDN URL or Supabase URL
+      // The track is already persisted by MusicPickerDialog; onAddTrack
+      // here only updates local UI state in the parent component.
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -80,10 +100,7 @@ export function AudioTrackManager({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setLibraryType("bgm");
-              setLibraryOpen(true);
-            }}
+            onClick={() => setMusicPickerOpen(true)}
           >
             <Music className="mr-1 h-3 w-3" />
             BGM 추가
@@ -224,6 +241,14 @@ export function AudioTrackManager({
         onClose={() => setLibraryOpen(false)}
         type={libraryType}
         onSelect={handleLibrarySelect}
+      />
+
+      {/* Music Picker Dialog (BGM: Pixabay search + upload) */}
+      <MusicPickerDialog
+        open={musicPickerOpen}
+        onClose={() => setMusicPickerOpen(false)}
+        projectId={projectId}
+        onTrackAdded={handleMusicPickerTrackAdded}
       />
     </div>
   );
