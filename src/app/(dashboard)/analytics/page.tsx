@@ -7,11 +7,39 @@ import { MetricsChart } from "@/components/analytics/metrics-chart";
 import { VideoPerformanceTable } from "@/components/analytics/video-performance-table";
 import { BarChart3 } from "lucide-react";
 
+/** Color-coded platform badge for upload history. */
+function PlatformBadge({ platform, videoUrl }: { platform: string; videoUrl: string | null }) {
+  const label = platform === "youtube" ? "YouTube" : platform === "tiktok" ? "TikTok" : "Instagram";
+  const colorClass =
+    platform === "youtube"
+      ? "bg-red-100 text-red-700"
+      : platform === "tiktok"
+        ? "bg-gray-900 text-white"
+        : "bg-purple-100 text-purple-700";
+
+  const badge = (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${colorClass}`}>
+      {label}
+    </span>
+  );
+
+  if (videoUrl) {
+    return (
+      <a href={videoUrl} target="_blank" rel="noopener noreferrer">
+        {badge}
+      </a>
+    );
+  }
+  return badge;
+}
+
 interface UploadRow {
   id: string;
   title: string;
   platform: string;
   youtubeVideoId: string | null;
+  tiktokVideoId: string | null;
+  reelsVideoId: string | null;
   videoUrl: string | null;
   status: string;
   uploadedAt: string | null;
@@ -80,6 +108,8 @@ export default function AnalyticsPage() {
                   title: upload.title ?? project.title,
                   platform: upload.platform ?? "youtube",
                   youtubeVideoId: upload.youtubeVideoId ?? null,
+                  tiktokVideoId: upload.tiktokVideoId ?? null,
+                  reelsVideoId: upload.reelsVideoId ?? null,
                   videoUrl: upload.videoUrl ?? null,
                   status: upload.status ?? "pending",
                   uploadedAt: upload.uploadedAt ?? null,
@@ -201,6 +231,12 @@ export default function AnalyticsPage() {
 
       <div>
         <h2 className="mb-4 text-lg font-semibold">Upload History</h2>
+        {/* Platform legend */}
+        <div className="mb-3 flex flex-wrap gap-2">
+          {["youtube", "tiktok", "reels"].map((p) => (
+            <PlatformBadge key={p} platform={p} videoUrl={null} />
+          ))}
+        </div>
         <VideoPerformanceTable uploads={data.uploads} />
       </div>
     </div>
