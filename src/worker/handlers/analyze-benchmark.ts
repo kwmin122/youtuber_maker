@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc, asc } from "drizzle-orm";
 import {
   jobs,
   jobEvents,
@@ -8,6 +8,7 @@ import {
   videos,
   analyses,
   projectChannels,
+  trendSnapshots,
 } from "@/lib/db/schema";
 import { getUserAIClient } from "@/lib/ai/get-user-ai-client";
 import {
@@ -184,6 +185,56 @@ export async function handleAnalyzeBenchmark(
 
     // 5. Parse response
     const analysisResult = parseBenchmarkAnalysisResponse(aiResponse);
+
+    // Phase 9 trend enrichment — non-fatal if snapshots table is empty
+    try {
+      const recentSnapshots = await db
+        .select({
+          keyword: trendSnapshots.keyword,
+          rank: trendSnapshots.rank,
+          source: trendSnapshots.source,
+        })
+        .from(trendSnapshots)
+        .where(eq(trendSnapshots.regionCode, "KR"))
+        .orderBy(desc(trendSnapshots.recordedAt), asc(trendSnapshots.rank))
+        .limit(200);
+
+      if (recentSnapshots.length > 0) {
+        const snapshotKeywordMap = new Map<string, { rank: number; source: string }>();
+        for (const s of recentSnapshots) {
+          const key = s.keyword.toLowerCase().trim();
+          if (!snapshotKeywordMap.has(key)) {
+            snapshotKeywordMap.set(key, { rank: s.rank, source: s.source });
+          }
+        }
+
+        for (const topic of analysisResult.topicRecommendations) {
+          const tokens = topic.title
+            .toLowerCase()
+            .split(/\s+/)
+            .map((t) => t.replace(/[^\p{L}\p{N}]/gu, ""))
+            .filter((t) => t.length >= 2);
+          for (const token of tokens) {
+            const match = snapshotKeywordMap.get(token);
+            if (match) {
+              const score = Math.min(
+                1,
+                Math.max(0, Math.round((1 - match.rank / 20) * 100) / 100)
+              );
+              topic.trendBadge = {
+                source: match.source as "youtube" | "google-trends",
+                score,
+                keyword: token,
+                categoryId: 0,
+              };
+              break; // first match wins
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: trend table may not exist yet in early deploys
+    }
 
     // 6. Save to DB
     await db
