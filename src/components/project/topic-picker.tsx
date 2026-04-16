@@ -55,6 +55,11 @@ export function TopicPicker({
                         ? "보통"
                         : "낮음"}
                   </span>
+                  {topic.trendBadge && (
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                      🔥 트렌드
+                    </span>
+                  )}
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {topic.description}

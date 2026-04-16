@@ -62,6 +62,12 @@ export default function DashboardLayout({
           >
             Analytics
           </Link>
+          <Link
+            href="/trends"
+            className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            트렌드
+          </Link>
           <div className="pt-4">
             <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Settings
