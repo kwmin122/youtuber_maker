@@ -24,9 +24,18 @@ const uploadSchema = z.object({
   privacyStatus: z.enum(["private", "unlisted", "public"]).optional().default("private"),
   publishAt: z.string().datetime().optional(),
   thumbnailId: z.string().uuid().optional(),
+  platforms: z
+    .array(z.enum(["youtube", "tiktok", "reels"]))
+    .min(1)
+    .optional()
+    .default(["youtube"]),
+  privacyLevel: z
+    .enum(["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"])
+    .optional()
+    .default("SELF_ONLY"),
 });
 
-/** POST -- Trigger a YouTube upload job */
+/** POST -- Trigger upload jobs (one per selected platform) */
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const session = await getServerSession();
   if (!session?.user) {
@@ -61,33 +70,48 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const { title, description, tags, privacyStatus, publishAt, thumbnailId } =
+  const { title, description, tags, privacyStatus, publishAt, thumbnailId, privacyLevel } =
     parsed.data;
+  const platforms = parsed.data.platforms;
 
-  // Create job row
-  const [created] = await db
-    .insert(jobs)
-    .values({
+  const results: Array<{ platform: string; jobId: string }> = [];
+
+  for (const platform of platforms) {
+    // Build per-platform payload
+    let payload: Record<string, unknown>;
+    if (platform === "youtube") {
+      payload = { projectId, title, description, tags, privacyStatus, publishAt, thumbnailId };
+    } else if (platform === "tiktok") {
+      payload = { projectId, title, description, privacyLevel };
+    } else {
+      // reels
+      payload = { projectId, title, description };
+    }
+
+    // Insert a jobs row
+    const [created] = await db
+      .insert(jobs)
+      .values({
+        userId: session.user.id,
+        type: `upload-${platform}`,
+        projectId,
+        status: "pending",
+        progress: 0,
+        payload,
+      })
+      .returning();
+
+    // Enqueue to BullMQ
+    await getQueue().add(`upload-${platform}`, {
+      payload,
+      jobId: created.id,
       userId: session.user.id,
-      type: "upload-youtube",
-      projectId,
-      status: "pending",
-      progress: 0,
-      payload: { projectId, title, description, tags, privacyStatus, publishAt, thumbnailId },
-    })
-    .returning();
+    });
 
-  // Enqueue to BullMQ
-  await getQueue().add("upload-youtube", {
-    payload: { projectId, title, description, tags, privacyStatus, publishAt, thumbnailId },
-    jobId: created.id,
-    userId: session.user.id,
-  });
+    results.push({ platform, jobId: created.id });
+  }
 
-  return NextResponse.json(
-    { jobId: created.id, status: "pending" },
-    { status: 201 }
-  );
+  return NextResponse.json({ jobs: results }, { status: 201 });
 }
 
 /** GET -- Get upload history for this project */
@@ -108,6 +132,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       id: uploads.id,
       platform: uploads.platform,
       youtubeVideoId: uploads.youtubeVideoId,
+      tiktokVideoId: uploads.tiktokVideoId,
+      reelsVideoId: uploads.reelsVideoId,
       videoUrl: uploads.videoUrl,
       title: uploads.title,
       status: uploads.status,
