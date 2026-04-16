@@ -26,7 +26,8 @@ const mockReturning = vi.fn(async () => [{ id: "run-manual-uuid" }]);
 vi.mock("@/lib/db", () => {
   const insertChain = {
     values: vi.fn(() => insertChain),
-    returning: (...args: unknown[]) => mockReturning(...args),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    returning: (..._args: any[]) => mockReturning(),
   };
   return {
     db: {
