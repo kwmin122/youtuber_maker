@@ -216,6 +216,85 @@ export function getVariantStrategies(
   return strategies;
 }
 
+// ---------- Phase 9: Gap Rationale ----------
+
+/**
+ * Phase 9 R-05 — gap keyword rationale prompt.
+ *
+ * Given a set of trend keywords the user's benchmark channels do NOT
+ * cover, ask Gemini to return short Korean rationales + suggested
+ * angles. The handler calls this in batch for up to 10 keywords per
+ * user; the response is stored in `trend_gap_analyses.rationale_cache`.
+ */
+export function buildGapRationalePrompt(
+  benchmarkChannelTitles: string[],
+  gapKeywords: Array<{ keyword: string; categoryId: number }>
+): { systemInstruction: string; userPrompt: string } {
+  const systemInstruction = `You are a YouTube Shorts content strategist. The user benchmarks the listed Korean channels. For each GAP keyword (a current trend that these channels do NOT cover), explain in Korean why it is an opportunity for the user, and suggest a specific content angle. Always respond in Korean. Return ONLY valid JSON matching the specified schema.`;
+
+  const channelBlock = benchmarkChannelTitles
+    .map((t, i) => `  ${i + 1}. ${t}`)
+    .join("\n");
+  const keywordBlock = gapKeywords
+    .map((k) => `- "${k.keyword}" (YouTube category ${k.categoryId})`)
+    .join("\n");
+
+  const userPrompt = `## 벤치마크 채널
+${channelBlock}
+
+## 갭 키워드 (현재 트렌드 중 위 채널이 다루지 않는 키워드)
+${keywordBlock}
+
+## 반환 JSON 스키마
+
+{
+  "items": [
+    {
+      "keyword": "갭 키워드 문자열",
+      "rationale": "이 키워드가 왜 기회인지 2-3문장 설명 (한국어)",
+      "suggestedAngle": "구체적인 쇼츠 콘텐츠 각도 1문장 (한국어)"
+    }
+  ]
+}
+
+반드시 JSON만 반환하세요. 설명이나 마크다운을 추가하지 마세요.`;
+
+  return { systemInstruction, userPrompt };
+}
+
+export type GapRationaleResponseItem = {
+  keyword: string;
+  rationale: string;
+  suggestedAngle: string;
+};
+
+export function parseGapRationaleResponse(raw: string): GapRationaleResponseItem[] {
+  // Strip markdown code fences if the provider ignored the instruction
+  const cleaned = raw.replace(/^```json\s*|\s*```$/g, "").trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    throw new Error(
+      `gap-rationale response is not valid JSON: ${(err as Error).message}`
+    );
+  }
+  const items = (parsed as { items?: GapRationaleResponseItem[] }).items;
+  if (!Array.isArray(items)) {
+    throw new Error("gap-rationale response missing 'items' array");
+  }
+  for (const it of items) {
+    if (
+      typeof it.keyword !== "string" ||
+      typeof it.rationale !== "string" ||
+      typeof it.suggestedAngle !== "string"
+    ) {
+      throw new Error("gap-rationale item has wrong shape");
+    }
+  }
+  return items;
+}
+
 // ---------- Scene Splitting ----------
 
 export interface SceneSplitInput {
