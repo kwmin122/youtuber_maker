@@ -100,6 +100,43 @@ describe("GET /api/music/search", () => {
     });
   });
 
+  it("returns 502 without leaking API key when fetch throws (network error)", async () => {
+    mockSession.mockResolvedValue({ user: { id: "user-1" } });
+    fetchSpy.mockRejectedValue(new TypeError("fetch failed: https://pixabay.com/api/music/?key=test-key"));
+
+    const res = await GET(makeRequest({ q: "lofi" }));
+
+    expect(res.status).toBe(502);
+    const text = await res.text();
+    expect(text).not.toContain("test-key");
+    expect(JSON.parse(text).error).toBe("Pixabay API unreachable");
+  });
+
+  it("returns 200 with empty tracks when Pixabay hits field is missing", async () => {
+    mockSession.mockResolvedValue({ user: { id: "user-1" } });
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({ totalHits: 0 }), // no hits field
+    });
+
+    const res = await GET(makeRequest({ q: "lofi" }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tracks).toEqual([]);
+  });
+
+  it("returns 400 when q exceeds 200 characters", async () => {
+    mockSession.mockResolvedValue({ user: { id: "user-1" } });
+
+    const res = await GET(makeRequest({ q: "a".repeat(201) }));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("200");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("genre-only search passes music_genre param to Pixabay", async () => {
     mockSession.mockResolvedValue({ user: { id: "user-1" } });
     fetchSpy.mockResolvedValue({

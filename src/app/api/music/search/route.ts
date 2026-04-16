@@ -37,6 +37,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (q.length > 200) {
+    return NextResponse.json(
+      { error: "query parameter 'q' exceeds maximum length of 200 characters" },
+      { status: 400 }
+    );
+  }
+
   const params = new URLSearchParams({ key: env.PIXABAY_API_KEY, per_page: "20" });
   if (q) params.set("q", q);
   if (genre) params.set("music_genre", genre);
@@ -45,9 +52,10 @@ export async function GET(request: NextRequest) {
   let response: Response;
   try {
     response = await fetch(pixabayUrl, { signal: AbortSignal.timeout(10_000) });
-  } catch (err) {
+  } catch {
+    // Do not include error details — they can contain the Pixabay API key URL
     return NextResponse.json(
-      { error: "Pixabay API unreachable", details: String(err) },
+      { error: "Pixabay API unreachable" },
       { status: 502 }
     );
   }
@@ -59,9 +67,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const data = (await response.json()) as { hits: PixabayHit[] };
+  let data: { hits?: unknown };
+  try {
+    data = (await response.json()) as { hits?: unknown };
+  } catch {
+    return NextResponse.json(
+      { error: "Pixabay API returned invalid response" },
+      { status: 502 }
+    );
+  }
 
-  const tracks: PixabayTrack[] = data.hits.map((h: PixabayHit) => ({
+  if (!Array.isArray(data.hits)) {
+    return NextResponse.json({ tracks: [] });
+  }
+
+  const tracks: PixabayTrack[] = (data.hits as PixabayHit[]).map((h: PixabayHit) => ({
     id: h.id,
     title: h.tags,
     artist: h.user,
