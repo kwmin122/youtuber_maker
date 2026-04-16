@@ -7,7 +7,7 @@ function requireEnvVars(): { appId: string; appSecret: string } {
   const appId = process.env.INSTAGRAM_APP_ID;
   const appSecret = process.env.INSTAGRAM_APP_SECRET;
   if (!appId || !appSecret) {
-    throw new Error("TikTok OAuth env vars not configured");
+    throw new Error("Instagram OAuth env vars not configured");
   }
   return { appId, appSecret };
 }

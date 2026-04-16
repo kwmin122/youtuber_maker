@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { writeFile, readFile, unlink, mkdtemp } from "fs/promises";
+import { writeFile, readFile, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { UploadPlatform } from "@/lib/distribution/types";
@@ -186,10 +186,10 @@ function runFFmpeg(args: string[]): Promise<void> {
   });
 }
 
-/** Silently unlink a path — does not throw if missing. */
+/** Silently remove a file or directory — does not throw if missing. */
 async function safeUnlink(path: string): Promise<void> {
   try {
-    await unlink(path);
+    await rm(path, { recursive: true, force: true });
   } catch {
     // ignore
   }
