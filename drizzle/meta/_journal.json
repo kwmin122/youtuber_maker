@@ -43,6 +43,13 @@
       "when": 1775871379300,
       "tag": "0005_jobs_avatar_dedupe_index",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776319871419,
+      "tag": "0006_phase9_trends",
+      "breakpoints": true
     }
   ]
 }
