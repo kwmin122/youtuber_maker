@@ -76,8 +76,8 @@ function makeMockDb(initial: {
       // Return a builder that records the .set and .where calls
       const builder = {
         _table: table,
-        _set: {},
-        _where: null,
+        _set: {} as Record<string, unknown>,
+        _where: null as unknown,
         set(values: Record<string, unknown>) {
           builder._set = values;
           return builder;
