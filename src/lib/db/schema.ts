@@ -572,6 +572,8 @@ export const uploads = pgTable("uploads", {
     .references(() => user.id, { onDelete: "cascade" }),
   platform: text("platform").notNull().default("youtube"), // 'youtube' | 'tiktok' | 'reels'
   youtubeVideoId: text("youtube_video_id"), // YouTube's video ID after upload
+  tiktokVideoId: text("tiktok_video_id"),   // TikTok's video ID after upload
+  reelsVideoId: text("reels_video_id"),     // Instagram's media ID after publish
   videoUrl: text("video_url"), // full URL to the uploaded video
   title: text("title").notNull(),
   description: text("description"),
