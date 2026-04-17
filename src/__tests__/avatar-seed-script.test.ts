@@ -11,8 +11,13 @@ import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
 import { join } from "path";
 
+function hasBun(): boolean {
+  const res = spawnSync("bun", ["--version"]);
+  return res.status === 0;
+}
+
 describe("scripts/seed-avatar-library.ts", () => {
-  it("dry-run exits 0 and prints the row count", () => {
+  it.skipIf(!hasBun())("dry-run exits 0 and prints the row count", () => {
     const root = join(__dirname, "../..");
     const result = spawnSync(
       "bun",
