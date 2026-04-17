@@ -5,20 +5,20 @@ import userEvent from "@testing-library/user-event";
 import { PlatformSelector } from "@/components/distribution/platform-selector";
 
 describe("PlatformSelector", () => {
-  it("renders YouTube as clickable and calls onSelect", async () => {
-    const onSelect = vi.fn();
-    render(<PlatformSelector selected="youtube" onSelect={onSelect} />);
+  it("renders YouTube as clickable and calls onToggle", async () => {
+    const onToggle = vi.fn();
+    render(<PlatformSelector selected={["youtube"]} onToggle={onToggle} />);
 
     const youtubeBtn = screen.getByLabelText("YouTube");
     expect(youtubeBtn).not.toBeDisabled();
 
     await userEvent.click(youtubeBtn);
-    expect(onSelect).toHaveBeenCalledWith("youtube");
+    expect(onToggle).toHaveBeenCalledWith("youtube");
   });
 
-  it("renders TikTok with 'Coming Soon' badge and does not call onSelect", async () => {
-    const onSelect = vi.fn();
-    render(<PlatformSelector selected="youtube" onSelect={onSelect} />);
+  it("renders TikTok with 'Coming Soon' badge and does not call onToggle when not configured", async () => {
+    const onToggle = vi.fn();
+    render(<PlatformSelector selected={["youtube"]} onToggle={onToggle} tiktokConfigured={false} />);
 
     const tiktokBtn = screen.getByLabelText("TikTok");
     expect(tiktokBtn).toBeDisabled();
@@ -28,12 +28,12 @@ describe("PlatformSelector", () => {
     expect(badges.length).toBeGreaterThanOrEqual(1);
 
     await userEvent.click(tiktokBtn);
-    expect(onSelect).not.toHaveBeenCalledWith("tiktok");
+    expect(onToggle).not.toHaveBeenCalledWith("tiktok");
   });
 
   it("shows highlighted styling for selected platform", () => {
-    const onSelect = vi.fn();
-    render(<PlatformSelector selected="youtube" onSelect={onSelect} />);
+    const onToggle = vi.fn();
+    render(<PlatformSelector selected={["youtube"]} onToggle={onToggle} />);
 
     const youtubeBtn = screen.getByLabelText("YouTube");
     expect(youtubeBtn.className).toContain("ring-2");

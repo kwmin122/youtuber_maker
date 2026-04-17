@@ -32,6 +32,11 @@ interface UploadHistoryItem {
   createdAt: string;
 }
 
+interface PlatformConfig {
+  tiktokConfigured: boolean;
+  instagramConfigured: boolean;
+}
+
 export function UploadPanel({
   projectId,
   hasExportedVideo,
@@ -39,15 +44,42 @@ export function UploadPanel({
   selectedThumbnailId,
   supabaseJwt,
 }: UploadPanelProps) {
-  const [platform, setPlatform] = useState<UploadPlatform>("youtube");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<UploadPlatform[]>(["youtube"]);
+  const [platformJobs, setPlatformJobs] = useState<Record<UploadPlatform, string | null>>({
+    youtube: null,
+    tiktok: null,
+    reels: null,
+  });
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig>({
+    tiktokConfigured: false,
+    instagramConfigured: false,
+  });
   const [privacyStatus, setPrivacyStatus] =
     useState<PrivacyStatus>("private");
   const [publishAt, setPublishAt] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<UploadHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+
+  // Fetch platform config (tiktokConfigured, instagramConfigured) on mount
+  useEffect(() => {
+    async function fetchPlatformConfig() {
+      try {
+        const res = await fetch("/api/auth/connected-accounts");
+        if (res.ok) {
+          const data = await res.json();
+          setPlatformConfig({
+            tiktokConfigured: data.tiktokConfigured ?? false,
+            instagramConfigured: data.instagramConfigured ?? false,
+          });
+        }
+      } catch {
+        // Silent failure — defaults remain false
+      }
+    }
+    fetchPlatformConfig();
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -67,9 +99,20 @@ export function UploadPanel({
     fetchHistory();
   }, [fetchHistory]);
 
+  function handleTogglePlatform(p: UploadPlatform) {
+    setSelectedPlatforms((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    );
+  }
+
   async function handleUpload() {
     if (!seo) {
       setError("Please generate SEO metadata first.");
+      return;
+    }
+
+    if (selectedPlatforms.length === 0) {
+      setError("Please select at least one platform.");
       return;
     }
 
@@ -87,6 +130,8 @@ export function UploadPanel({
           privacyStatus,
           publishAt: publishAt ?? undefined,
           thumbnailId: selectedThumbnailId ?? undefined,
+          platforms: selectedPlatforms,
+          privacyLevel: "SELF_ONLY",
         }),
       });
 
@@ -96,8 +141,17 @@ export function UploadPanel({
         return;
       }
 
-      const data = await res.json();
-      setJobId(data.jobId);
+      const data = await res.json() as { jobs: Array<{ platform: string; jobId: string }> };
+      setPlatformJobs((prev) => {
+        const next = { ...prev };
+        for (const j of data.jobs) {
+          next[j.platform as UploadPlatform] = j.jobId;
+        }
+        return next;
+      });
+
+      // Refresh history after starting jobs
+      fetchHistory();
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -122,7 +176,12 @@ export function UploadPanel({
       {/* Platform selector */}
       <div className="space-y-2">
         <Label>Platform</Label>
-        <PlatformSelector selected={platform} onSelect={setPlatform} />
+        <PlatformSelector
+          selected={selectedPlatforms}
+          onToggle={handleTogglePlatform}
+          tiktokConfigured={platformConfig.tiktokConfigured}
+          instagramConfigured={platformConfig.instagramConfigured}
+        />
       </div>
 
       {/* Privacy status */}
@@ -165,21 +224,26 @@ export function UploadPanel({
         {error && <p className="text-xs text-destructive">{error}</p>}
         <Button
           onClick={handleUpload}
-          disabled={submitting || !seo}
+          disabled={submitting || !seo || selectedPlatforms.length === 0}
           className="w-full"
         >
           <Upload className="mr-2 h-4 w-4" />
-          {submitting ? "Submitting..." : "Upload to YouTube"}
+          {submitting ? "Submitting..." : "업로드 시작"}
         </Button>
       </div>
 
-      {/* Upload progress */}
-      {jobId && (
-        <UploadProgress
-          jobId={jobId}
-          supabaseJwt={supabaseJwt}
-          onRetry={handleUpload}
-        />
+      {/* Per-platform upload progress */}
+      {selectedPlatforms.map((p) =>
+        platformJobs[p] ? (
+          <div key={p} className="space-y-1">
+            <p className="text-xs font-semibold capitalize text-muted-foreground">{p}</p>
+            <UploadProgress
+              jobId={platformJobs[p]!}
+              supabaseJwt={supabaseJwt}
+              onRetry={handleUpload}
+            />
+          </div>
+        ) : null
       )}
 
       {/* Upload history */}

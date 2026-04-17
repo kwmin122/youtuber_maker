@@ -22,6 +22,8 @@ const ALLOWED_JOB_TYPES = [
   "generate-thumbnail",
   "fetch-metrics",
   "generate-avatar-lipsync",
+  "ingest-trends",              // Phase 9 — cron only, POST /api/jobs rejects explicitly (below)
+  "precompute-gap-rationales",  // Phase 9 — background chained from ingest-trends
   "longform-download",
   "longform-analyze",
   "longform-clip",
@@ -148,6 +150,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "already_enqueued", existingJobId: existingActiveJobs[0].id },
         { status: 409 }
+      );
+    }
+  }
+
+  // Phase 9 rule 14: `ingest-trends` is cron-only. It is bypassed from the
+  // jobs DB table entirely and enqueued directly into BullMQ by the cron
+  // route at `/api/cron/trend-ingest`. Any attempt to POST /api/jobs with
+  // this type is a bug or an attack — reject.
+  if (type === "ingest-trends") {
+    return NextResponse.json(
+      { error: "ingest-trends is cron-only; use /api/cron/trend-ingest" },
+      { status: 403 }
+    );
+  }
+
+  // Phase 9: `precompute-gap-rationales` must target the caller's own
+  // userId. Admin allowlist bypass available for ops.
+  if (type === "precompute-gap-rationales") {
+    const rawUserId = payload?.userId;
+    if (typeof rawUserId !== "string" || rawUserId.length === 0) {
+      return NextResponse.json(
+        { error: "precompute-gap-rationales requires payload.userId" },
+        { status: 400 }
+      );
+    }
+    const adminAllowlist = (process.env.ADMIN_USER_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const isAdmin = adminAllowlist.includes(session.user.id);
+    if (!isAdmin && rawUserId !== session.user.id) {
+      return NextResponse.json(
+        { error: "forbidden" },
+        { status: 403 }
       );
     }
   }

@@ -8,6 +8,8 @@ interface VideoPerformanceTableProps {
     title: string;
     platform: string;
     youtubeVideoId: string | null;
+    tiktokVideoId?: string | null;
+    reelsVideoId?: string | null;
     videoUrl: string | null;
     status: string;
     uploadedAt: string | null;
@@ -59,14 +61,18 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function PlatformBadge({ platform }: { platform: string }) {
-  const label = platform === "youtube" ? "YouTube" : platform;
+  const label =
+    platform === "youtube" ? "YouTube" : platform === "tiktok" ? "TikTok" : "Instagram";
+  const colorClass =
+    platform === "youtube"
+      ? "bg-red-100 text-red-700"
+      : platform === "tiktok"
+        ? "bg-gray-900 text-white"
+        : "bg-purple-100 text-purple-700";
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-      {platform === "youtube" && (
-        <span className="text-red-500" aria-label="YouTube">
-          ▶
-        </span>
-      )}
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${colorClass}`}
+    >
       {label}
     </span>
   );

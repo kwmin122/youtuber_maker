@@ -1,0 +1,43 @@
+{
+  "schema": "sunco-checkpoint-v1",
+  "phase": "11",
+  "phase_name": "multi-platform-distribution",
+  "phase_slug": "11-multi-platform-distribution",
+  "wave_completed": 1,
+  "timestamp": "2026-04-17T00:00:00Z",
+  "plans_completed": [
+    {
+      "id": "11-01",
+      "title": "TikTok and Instagram OAuth infrastructure",
+      "status": "completed",
+      "lint_status": "PASS",
+      "summary_path": ".planning/phases/11-multi-platform-distribution/11-01-SUMMARY.md",
+      "last_commit": "122f6b4"
+    },
+    {
+      "id": "11-02",
+      "title": "Video format validation, TikTok and Reels upload workers",
+      "status": "completed",
+      "lint_status": "PASS",
+      "summary_path": ".planning/phases/11-multi-platform-distribution/11-02-SUMMARY.md",
+      "last_commit": "352a0a5"
+    }
+  ],
+  "plans_pending": [
+    {
+      "id": "11-03",
+      "title": "Multi-platform upload orchestration UI and API extension",
+      "wave": 2,
+      "status": "pending"
+    }
+  ],
+  "blast_radius": {
+    "risk": "HIGH",
+    "files_in_scope": 20,
+    "files_transitively_affected": 67
+  },
+  "lint_gate_overrides": [],
+  "branch": "phase-11/multi-platform-distribution",
+  "interrupted": false,
+  "next_wave": 2
+}

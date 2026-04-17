@@ -177,6 +177,55 @@ export async function fetchVideosByIds(
   return results;
 }
 
+/**
+ * Phase 9 R-01: Fetch the YouTube trending chart for a given category
+ * and region. Uses videos.list with chart=mostPopular, which costs 1
+ * unit per call regardless of maxResults.
+ *
+ * Returns a minimal keyword-extraction-friendly subset. The handler
+ * in `ingest-trends.ts` maps each item to zero-or-more keywords via
+ * `extractKeywordsFromTrendingItem`.
+ */
+export type TrendingVideoItem = {
+  youtubeVideoId: string;
+  title: string;
+  description: string;
+  categoryId: number;
+  channelTitle: string;
+  viewCount: number;
+  publishedAt: string | undefined;
+};
+
+export async function getTrendingVideos(params: {
+  categoryId: number;
+  regionCode: string; // e.g. "KR"
+  maxResults?: number; // default 20
+}): Promise<TrendingVideoItem[]> {
+  const yt = getYouTube();
+  const res = await yt.videos.list({
+    part: ["snippet", "statistics"],
+    chart: "mostPopular",
+    regionCode: params.regionCode,
+    videoCategoryId: String(params.categoryId),
+    maxResults: params.maxResults ?? 20,
+  });
+
+  const items: TrendingVideoItem[] = [];
+  for (const item of res.data.items || []) {
+    if (!item.id || !item.snippet) continue;
+    items.push({
+      youtubeVideoId: item.id,
+      title: item.snippet.title || "",
+      description: item.snippet.description || "",
+      categoryId: params.categoryId,
+      channelTitle: item.snippet.channelTitle || "",
+      viewCount: parseInt(item.statistics?.viewCount || "0", 10),
+      publishedAt: item.snippet.publishedAt || undefined,
+    });
+  }
+  return items;
+}
+
 /** Map a YouTube API channel item to our internal type. */
 function mapChannelItem(
   item: youtube_v3.Schema$Channel

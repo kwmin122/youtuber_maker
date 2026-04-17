@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -9,7 +10,10 @@ import {
   real,
   boolean,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
+
+import type { TopicRecommendation } from "@/lib/ai/types";
 
 // Re-export better-auth tables from the fork's schema
 export { user } from "@/db/schema/auth/user";
@@ -273,14 +277,9 @@ export const analyses = pgTable("analyses", {
     frequency: number;
   }>>().notNull(),
   /** AI-recommended topics based on analysis */
-  topicRecommendations: jsonb("topic_recommendations").$type<Array<{
-    title: string;
-    description: string;
-    rationale: string;
-    suggestedHookType: string;
-    suggestedStructure: string;
-    viralPotential: "high" | "medium" | "low";
-  }>>().notNull(),
+  topicRecommendations: jsonb("topic_recommendations")
+    .$type<TopicRecommendation[]>()
+    .notNull(),
   /** Which AI provider was used */
   aiProvider: text("ai_provider").notNull(), // 'gemini' | 'openai'
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -442,6 +441,107 @@ export const avatarAssets = pgTable("avatar_assets", {
   uniqueIndex("avatar_assets_user_hash_idx").on(table.userId, table.imageHash),
 ]);
 
+// ---------- Phase 9 Tables ----------
+
+/**
+ * Phase 9 R-06: append-only time-series snapshots. Every ingestion run
+ * inserts fresh rows with a new `recordedAt`. The `(recordedAt::date,
+ * categoryId, regionCode, keyword, source)` unique constraint prevents
+ * same-day duplicates so BullMQ retries are idempotent (cross-cutting
+ * rule 7). 30-day retention is enforced at the end of each ingestion
+ * handler run (rule 15).
+ */
+export const trendSnapshots = pgTable("trend_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  categoryId: integer("category_id").notNull(), // YouTube videoCategoryId (e.g. 10, 22, 24)
+  regionCode: text("region_code").notNull().default("KR"), // Phase 9 R-03
+  keyword: text("keyword").notNull(),
+  rank: integer("rank").notNull(), // 1..N within (recordedAt date, category, region, source)
+  source: text("source").notNull(), // 'youtube' | 'google-trends'
+  videoCount: integer("video_count"), // nullable — google-trends has no video count
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>(), // provider-specific debug payload
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  // Same-day + same-source dedupe (rule 7 idempotency)
+  uniqueIndex("trend_snapshots_day_cat_region_kw_src_idx").on(
+    sql`(${table.recordedAt}::date)`,
+    table.categoryId,
+    table.regionCode,
+    table.keyword,
+    table.source
+  ),
+  // Dashboard query: "latest snapshots per category"
+  index("trend_snapshots_lookup_idx").on(
+    table.recordedAt,
+    table.categoryId,
+    table.regionCode
+  ),
+]);
+
+/**
+ * Phase 9 R-04: service/admin ingestion audit trail. No `userId` —
+ * cron runs are system-level. The cron route creates this row BEFORE
+ * enqueuing the BullMQ job so even orphaned enqueues leave a trace.
+ * Status lifecycle: pending -> running -> success | partial | failed.
+ */
+export const trendIngestionRuns = pgTable("trend_ingestion_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+  regionCode: text("region_code").notNull().default("KR"),
+  categoryCount: integer("category_count").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  partialCount: integer("partial_count").notNull().default(0),
+  failureCount: integer("failure_count").notNull().default(0),
+  status: text("status").notNull().default("pending"), // 'pending' | 'running' | 'success' | 'partial' | 'failed'
+  errorDetails: jsonb("error_details").$type<Record<string, unknown> | null>(),
+  source: text("source").notNull(), // 'vercel-cron' | 'manual-admin'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Phase 9 R-05: per-user gap analysis cache. `channelSetHash` is a
+ * deterministic hash of the user's sorted project channel IDs so that
+ * adding/removing a channel invalidates the cache implicitly. TTL is
+ * 24h — precompute runs refresh it, on-demand writes write back.
+ *
+ * `setdiffCache` holds the Tier 1 (deterministic) result.
+ * `rationaleCache` holds the Tier 2/3 (Gemini) keyword -> rationale map.
+ */
+export const trendGapAnalyses = pgTable("trend_gap_analyses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }), // nullable for user-level caches not tied to a single project
+  channelSetHash: text("channel_set_hash").notNull(),
+  latestSnapshotDate: text("latest_snapshot_date").notNull(), // ISO date yyyy-mm-dd
+  setdiffCache: jsonb("setdiff_cache").$type<{
+    keywords: Array<{
+      keyword: string;
+      categoryId: number;
+      rank: number;
+      source: "youtube" | "google-trends";
+    }>;
+  } | null>(),
+  rationaleCache: jsonb("rationale_cache").$type<Record<string, {
+    rationale: string;
+    suggestedAngle: string;
+    generatedAt: string;
+  }> | null>(),
+  computedAt: timestamp("computed_at").defaultNow().notNull(),
+  ttlExpiresAt: timestamp("ttl_expires_at").notNull(),
+}, (table) => [
+  uniqueIndex("trend_gap_analyses_user_hash_idx").on(
+    table.userId,
+    table.channelSetHash,
+    table.latestSnapshotDate
+  ),
+]);
+
 // ---------- Phase 5 Tables ----------
 
 export const audioTracks = pgTable("audio_tracks", {
@@ -472,6 +572,8 @@ export const uploads = pgTable("uploads", {
     .references(() => user.id, { onDelete: "cascade" }),
   platform: text("platform").notNull().default("youtube"), // 'youtube' | 'tiktok' | 'reels'
   youtubeVideoId: text("youtube_video_id"), // YouTube's video ID after upload
+  tiktokVideoId: text("tiktok_video_id"),   // TikTok's video ID after upload
+  reelsVideoId: text("reels_video_id"),     // Instagram's media ID after publish
   videoUrl: text("video_url"), // full URL to the uploaded video
   title: text("title").notNull(),
   description: text("description"),

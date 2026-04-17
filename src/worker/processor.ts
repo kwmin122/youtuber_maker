@@ -10,6 +10,8 @@ import { handleGenerateVideo } from "./handlers/generate-video";
 import { handleGenerateTTS } from "./handlers/generate-tts";
 import { handleExportVideo } from "./handlers/export-video";
 import { handleUploadYouTube } from "./handlers/upload-youtube";
+import { handleUploadTikTok } from "./handlers/upload-tiktok";
+import { handleUploadReels } from "./handlers/upload-reels";
 import { handleGenerateSEO } from "./handlers/generate-seo";
 import { handleGenerateThumbnail } from "./handlers/generate-thumbnail";
 import { handleFetchMetrics } from "./handlers/fetch-metrics";
@@ -17,6 +19,8 @@ import { handleLongformDownload } from "./handlers/longform-download";
 import { handleLongformAnalyze } from "./handlers/longform-analyze";
 import { handleLongformClip } from "./handlers/longform-clip";
 import { handleGenerateAvatarLipsync } from "./handlers/generate-avatar-lipsync";
+import { handleIngestTrends } from "./handlers/ingest-trends";
+import { handlePrecomputeGapRationales } from "./handlers/precompute-gap-rationales";
 
 export async function processJob(job: Job) {
   switch (job.name) {
@@ -40,6 +44,10 @@ export async function processJob(job: Job) {
       return handleExportVideo(job, db);
     case "upload-youtube":
       return handleUploadYouTube(job, db);
+    case "upload-tiktok":
+      return handleUploadTikTok(job, db);
+    case "upload-reels":
+      return handleUploadReels(job, db);
     case "generate-seo":
       return handleGenerateSEO(job, db);
     case "generate-thumbnail":
@@ -48,6 +56,10 @@ export async function processJob(job: Job) {
       return handleFetchMetrics(job, db);
     case "generate-avatar-lipsync":
       return handleGenerateAvatarLipsync(job, db);
+    case "ingest-trends":
+      return handleIngestTrends(job, db);
+    case "precompute-gap-rationales":
+      return handlePrecomputeGapRationales(job, db);
     case "longform-download":
       return handleLongformDownload(job, db);
     case "longform-analyze":
